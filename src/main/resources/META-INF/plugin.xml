@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>com.github.dmitry.claudeusage</id>
+    <name>Claude Code Usage</name>
+    <vendor>Dmitry Polushkin</vendor>
+
+    <description><![CDATA[
+    Displays your Claude subscription usage limits in the IDE status bar.
+    <br><br>
+    <b>Note:</b> This plugin tracks subscription quota usage only (5-hour, 7-day limits).
+    It does not track API tokens, costs, or conversation history.
+    <br><br>
+    <b>Features:</b>
+    <ul>
+        <li>Real-time usage percentage with color-coded indicator</li>
+        <li>Time until quota reset</li>
+        <li>Detailed popup with all usage tiers</li>
+        <li>Direct link to Claude settings</li>
+    </ul>
+    <br>
+    <b>Requirements:</b> Claude Code CLI installed and authenticated (~/.claude/.credentials.json)
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <statusBarWidgetFactory
+                id="ClaudeUsageWidget"
+                implementation="com.github.dmitry.claudeusage.ClaudeUsageStatusBarWidgetFactory"
+                order="after positionWidget"/>
+    </extensions>
+
+    <applicationListeners>
+    </applicationListeners>
+</idea-plugin>
