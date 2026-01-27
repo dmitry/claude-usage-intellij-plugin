@@ -1,1 +1,1 @@
-rootProject.name = "intellij-claude-code-usage-plugin"
+rootProject.name = "claude-usage-intellij-plugin"

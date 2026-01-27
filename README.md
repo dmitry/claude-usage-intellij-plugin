@@ -36,7 +36,7 @@ The plugin reads credentials from `~/.claude/.credentials.json` which is created
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/claude-usage-intellij-plugin-x.x.x.zip`
+Output: `build/distributions/claude-usage-intellij-plugin-0.1.0.zip`
 
 ### Run in sandbox IDE
 
