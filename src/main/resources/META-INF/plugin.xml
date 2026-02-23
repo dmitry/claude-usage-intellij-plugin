@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.github.dmitry.claudeusage</id>
     <name>Claude Code Usage</name>
-    <vendor>Dmitry Polushkin</vendor>
+    <vendor url="https://github.com/nicedoc">Dmitry Polushkin</vendor>
 
     <description><![CDATA[
     Displays your Claude subscription usage limits in the IDE status bar.
@@ -11,14 +11,31 @@
     <br><br>
     <b>Features:</b>
     <ul>
-        <li>Real-time usage percentage with color-coded indicator</li>
+        <li>Real-time usage percentage with auto-refresh every 60 seconds</li>
+        <li>Manual refresh button for instant updates</li>
+        <li>Color-coded progress indicator (green → yellow → red)</li>
         <li>Time until quota reset</li>
-        <li>Detailed popup with all usage tiers</li>
+        <li>Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, extra usage)</li>
+        <li>Configurable settings (Settings → Tools → Claude Code Usage)</li>
+        <li>Dark and light theme support</li>
+        <li>Error state display with actionable hints</li>
         <li>Direct link to Claude settings</li>
     </ul>
     <br>
     <b>Requirements:</b> Claude Code CLI installed and authenticated (~/.claude/.credentials.json)
     ]]></description>
+
+    <change-notes><![CDATA[
+    <b>0.2.0</b>
+    <ul>
+        <li>Settings panel (Settings → Tools → Claude Code Usage): configurable quota display, warning thresholds, credentials path</li>
+        <li>Refresh button in usage popup</li>
+        <li>Error state display with actionable hints</li>
+        <li>Dark and light theme support</li>
+        <li>Fixed widget visibility issues</li>
+        <li>Platform version bumped to 2024.1+</li>
+    </ul>
+    ]]></change-notes>
 
     <depends>com.intellij.modules.platform</depends>
 
@@ -27,8 +44,12 @@
                 id="ClaudeUsageWidget"
                 implementation="com.github.dmitry.claudeusage.ClaudeUsageStatusBarWidgetFactory"
                 order="after positionWidget"/>
+
+        <applicationConfigurable
+                parentId="tools"
+                instance="com.github.dmitry.claudeusage.ClaudeUsageSettingsConfigurable"
+                id="com.github.dmitry.claudeusage.ClaudeUsageSettingsConfigurable"
+                displayName="Claude Code Usage"/>
     </extensions>
 
-    <applicationListeners>
-    </applicationListeners>
 </idea-plugin>

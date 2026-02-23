@@ -6,7 +6,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import kotlinx.serialization.json.Json
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
 import java.time.Duration
 import java.time.Instant
 import java.time.ZonedDateTime
@@ -16,11 +16,22 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
+enum class UsageErrorState(val message: String) {
+    NONE(""),
+    NO_CREDENTIALS("Credentials file not found"),
+    NO_ACCESS_TOKEN("No access token found in credentials file"),
+    AUTH_FAILED("Authentication failed — token may be expired. Run 'claude' to re-authenticate"),
+    HTTP_ERROR("Server returned an error"),
+    NETWORK_ERROR("Network error — check your internet connection"),
+    PARSE_ERROR("Failed to parse API response")
+}
+
 @Service(Service.Level.APP)
 class ClaudeUsageService : Disposable {
     private val LOG = Logger.getInstance(ClaudeUsageService::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val cachedUsage = AtomicReference<UsageResponse?>(null)
+    private val errorState = AtomicReference(UsageErrorState.NONE)
     private val lastFetchTime = AtomicReference<Instant?>(null)
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val listeners = mutableListOf<() -> Unit>()
@@ -57,22 +68,35 @@ class ClaudeUsageService : Disposable {
 
     private fun notifyListeners() {
         val listenersCopy = synchronized(listeners) { listeners.toList() }
-        listenersCopy.forEach { it.invoke() }
+        ApplicationManager.getApplication().invokeLater {
+            listenersCopy.forEach { it.invoke() }
+        }
     }
 
     fun getUsage(): UsageResponse? = cachedUsage.get()
 
+    fun getError(): UsageErrorState = errorState.get()
+
+    fun getLastFetchTime(): Instant? = lastFetchTime.get()
+
     fun refreshUsage() {
+        if (!ClaudeCredentialsReader.hasCredentials()) {
+            cachedUsage.set(null)
+            errorState.set(UsageErrorState.NO_CREDENTIALS)
+            notifyListeners()
+            return
+        }
+
         val accessToken = ClaudeCredentialsReader.readAccessToken()
         if (accessToken == null) {
             cachedUsage.set(null)
+            errorState.set(UsageErrorState.NO_ACCESS_TOKEN)
             notifyListeners()
             return
         }
 
         try {
-            val url = URL(USAGE_API_URL)
-            val connection = url.openConnection() as HttpURLConnection
+            val connection = URI(USAGE_API_URL).toURL().openConnection() as HttpURLConnection
             connection.requestMethod = "GET"
             connection.setRequestProperty("Authorization", "Bearer $accessToken")
             connection.setRequestProperty("anthropic-beta", ANTHROPIC_BETA)
@@ -83,18 +107,43 @@ class ClaudeUsageService : Disposable {
             val responseCode = connection.responseCode
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 val response = connection.inputStream.bufferedReader().readText()
-                val usageResponse = json.decodeFromString<UsageResponse>(response)
-                cachedUsage.set(usageResponse)
-                lastFetchTime.set(Instant.now())
-                LOG.info("Successfully fetched Claude usage data")
+                try {
+                    val usageResponse = json.decodeFromString<UsageResponse>(response)
+                    cachedUsage.set(usageResponse)
+                    errorState.set(UsageErrorState.NONE)
+                    lastFetchTime.set(Instant.now())
+                    LOG.info("Successfully fetched Claude usage data")
+                } catch (e: Exception) {
+                    LOG.warn("Failed to parse Claude usage response: ${e.message}")
+                    cachedUsage.set(null)
+                    errorState.set(UsageErrorState.PARSE_ERROR)
+                }
+            } else if (responseCode == HttpURLConnection.HTTP_UNAUTHORIZED || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
+                LOG.warn("Claude usage auth failed: HTTP $responseCode")
+                cachedUsage.set(null)
+                errorState.set(UsageErrorState.AUTH_FAILED)
             } else {
                 LOG.warn("Failed to fetch Claude usage: HTTP $responseCode")
                 cachedUsage.set(null)
+                errorState.set(UsageErrorState.HTTP_ERROR)
             }
             connection.disconnect()
+        } catch (e: java.net.UnknownHostException) {
+            LOG.warn("Network error fetching Claude usage: ${e.message}")
+            cachedUsage.set(null)
+            errorState.set(UsageErrorState.NETWORK_ERROR)
+        } catch (e: java.net.ConnectException) {
+            LOG.warn("Connection error fetching Claude usage: ${e.message}")
+            cachedUsage.set(null)
+            errorState.set(UsageErrorState.NETWORK_ERROR)
+        } catch (e: java.net.SocketTimeoutException) {
+            LOG.warn("Timeout fetching Claude usage: ${e.message}")
+            cachedUsage.set(null)
+            errorState.set(UsageErrorState.NETWORK_ERROR)
         } catch (e: Exception) {
             LOG.warn("Error fetching Claude usage: ${e.message}")
             cachedUsage.set(null)
+            errorState.set(UsageErrorState.NETWORK_ERROR)
         }
 
         notifyListeners()

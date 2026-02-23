@@ -9,7 +9,15 @@ object ClaudeCredentialsReader {
     private val json = Json { ignoreUnknownKeys = true }
 
     private val credentialsPath: File
-        get() = File(System.getProperty("user.home"), ".claude/.credentials.json")
+        get() {
+            val configuredPath = ClaudeUsageSettings.getInstance().state.credentialsFilePath
+            val resolved = if (configuredPath.startsWith("~")) {
+                configuredPath.replaceFirst("~", System.getProperty("user.home"))
+            } else {
+                configuredPath
+            }
+            return File(resolved)
+        }
 
     fun readAccessToken(): String? {
         val file = credentialsPath
