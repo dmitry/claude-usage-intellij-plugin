@@ -26,6 +26,20 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>0.2.3</b>
+    <ul>
+        <li>Refresh button disabled when last fetch was less than 1 minute ago</li>
+        <li>Exponential backoff on all API errors to reduce unnecessary calls</li>
+    </ul>
+    <b>0.2.2</b>
+    <ul>
+        <li>Countdown timer now shows days when reset time exceeds 24 hours (e.g. "2d 14h 1m")</li>
+    </ul>
+    <b>0.2.1</b>
+    <ul>
+        <li>Updated User-Agent header to fix usage API that stopped working</li>
+        <li>Exponential backoff retry on rate limiting</li>
+    </ul>
     <b>0.2.0</b>
     <ul>
         <li>Settings panel (Settings → Tools → Claude Code Usage): configurable quota display, warning thresholds, credentials path</li>

@@ -23,6 +23,7 @@ enum class UsageErrorState(val message: String) {
     AUTH_FAILED("Authentication failed — token may be expired. Run 'claude' to re-authenticate"),
     HTTP_ERROR("Server returned an error"),
     NETWORK_ERROR("Network error — check your internet connection"),
+    RATE_LIMITED("Rate limited — will retry shortly"),
     PARSE_ERROR("Failed to parse API response")
 }
 
@@ -35,35 +36,39 @@ class ClaudeUsageService : Disposable {
     private val lastFetchTime = AtomicReference<Instant?>(null)
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val listeners = mutableListOf<() -> Unit>()
+    @Volatile
+    private var currentBackoffSeconds = REFRESH_INTERVAL_SECONDS
 
     companion object {
         private const val USAGE_API_URL = "https://api.anthropic.com/api/oauth/usage"
         private const val ANTHROPIC_BETA = "oauth-2025-04-20"
+        private const val USER_AGENT = "claude-code/2.1.69"
         private const val REFRESH_INTERVAL_SECONDS = 60L
+        private const val MAX_BACKOFF_SECONDS = 960L
 
         fun getInstance(): ClaudeUsageService =
             ApplicationManager.getApplication().getService(ClaudeUsageService::class.java)
     }
 
     init {
-        scheduler.scheduleAtFixedRate(
-            { refreshUsage() },
-            0,
-            REFRESH_INTERVAL_SECONDS,
-            TimeUnit.SECONDS
-        )
+        scheduleNext(0)
+    }
+
+    private fun scheduleNext(delaySeconds: Long) {
+        scheduler.schedule({ refreshAndReschedule() }, delaySeconds, TimeUnit.SECONDS)
+    }
+
+    private fun refreshAndReschedule() {
+        refreshUsage()
+        scheduleNext(currentBackoffSeconds)
     }
 
     fun addListener(listener: () -> Unit) {
-        synchronized(listeners) {
-            listeners.add(listener)
-        }
+        synchronized(listeners) { listeners.add(listener) }
     }
 
     fun removeListener(listener: () -> Unit) {
-        synchronized(listeners) {
-            listeners.remove(listener)
-        }
+        synchronized(listeners) { listeners.remove(listener) }
     }
 
     private fun notifyListeners() {
@@ -79,92 +84,114 @@ class ClaudeUsageService : Disposable {
 
     fun getLastFetchTime(): Instant? = lastFetchTime.get()
 
+    fun canRefresh(): Boolean {
+        val last = lastFetchTime.get() ?: return true
+        return Duration.between(last, Instant.now()).seconds >= REFRESH_INTERVAL_SECONDS
+    }
+
+    fun secondsSinceLastFetch(): Long? {
+        val last = lastFetchTime.get() ?: return null
+        return Duration.between(last, Instant.now()).seconds
+    }
+
     fun refreshUsage() {
+        if (!canRefresh()) {
+            LOG.info("Skipping refresh, last fetch was ${secondsSinceLastFetch()}s ago")
+            return
+        }
+
         if (!ClaudeCredentialsReader.hasCredentials()) {
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NO_CREDENTIALS)
-            notifyListeners()
+            setError(UsageErrorState.NO_CREDENTIALS)
             return
         }
 
         val accessToken = ClaudeCredentialsReader.readAccessToken()
         if (accessToken == null) {
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NO_ACCESS_TOKEN)
-            notifyListeners()
+            setError(UsageErrorState.NO_ACCESS_TOKEN)
             return
         }
 
         try {
-            val connection = URI(USAGE_API_URL).toURL().openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.setRequestProperty("Authorization", "Bearer $accessToken")
-            connection.setRequestProperty("anthropic-beta", ANTHROPIC_BETA)
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.connectTimeout = 10000
-            connection.readTimeout = 10000
-
-            val responseCode = connection.responseCode
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                val response = connection.inputStream.bufferedReader().readText()
-                try {
-                    val usageResponse = json.decodeFromString<UsageResponse>(response)
-                    cachedUsage.set(usageResponse)
-                    errorState.set(UsageErrorState.NONE)
-                    lastFetchTime.set(Instant.now())
-                    LOG.info("Successfully fetched Claude usage data")
-                } catch (e: Exception) {
-                    LOG.warn("Failed to parse Claude usage response: ${e.message}")
-                    cachedUsage.set(null)
-                    errorState.set(UsageErrorState.PARSE_ERROR)
-                }
-            } else if (responseCode == HttpURLConnection.HTTP_UNAUTHORIZED || responseCode == HttpURLConnection.HTTP_FORBIDDEN) {
-                LOG.warn("Claude usage auth failed: HTTP $responseCode")
-                cachedUsage.set(null)
-                errorState.set(UsageErrorState.AUTH_FAILED)
-            } else {
-                LOG.warn("Failed to fetch Claude usage: HTTP $responseCode")
-                cachedUsage.set(null)
-                errorState.set(UsageErrorState.HTTP_ERROR)
-            }
-            connection.disconnect()
-        } catch (e: java.net.UnknownHostException) {
-            LOG.warn("Network error fetching Claude usage: ${e.message}")
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NETWORK_ERROR)
-        } catch (e: java.net.ConnectException) {
-            LOG.warn("Connection error fetching Claude usage: ${e.message}")
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NETWORK_ERROR)
-        } catch (e: java.net.SocketTimeoutException) {
-            LOG.warn("Timeout fetching Claude usage: ${e.message}")
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NETWORK_ERROR)
+            fetchFromApi(accessToken)
         } catch (e: Exception) {
             LOG.warn("Error fetching Claude usage: ${e.message}")
-            cachedUsage.set(null)
-            errorState.set(UsageErrorState.NETWORK_ERROR)
+            setError(UsageErrorState.NETWORK_ERROR)
         }
 
         notifyListeners()
     }
 
+    private fun fetchFromApi(accessToken: String) {
+        val connection = URI(USAGE_API_URL).toURL().openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Authorization", "Bearer $accessToken")
+        connection.setRequestProperty("anthropic-beta", ANTHROPIC_BETA)
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("User-Agent", USER_AGENT)
+        connection.connectTimeout = 10000
+        connection.readTimeout = 10000
+
+        try {
+            handleResponse(connection)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun handleResponse(connection: HttpURLConnection) {
+        val responseCode = connection.responseCode
+
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            handleSuccess(connection)
+            return
+        }
+
+        val error = when {
+            responseCode == HttpURLConnection.HTTP_UNAUTHORIZED || responseCode == HttpURLConnection.HTTP_FORBIDDEN -> UsageErrorState.AUTH_FAILED
+            responseCode == 429 -> UsageErrorState.RATE_LIMITED
+            else -> UsageErrorState.HTTP_ERROR
+        }
+        LOG.warn("Failed to fetch Claude usage: HTTP $responseCode")
+        setError(error)
+    }
+
+    private fun handleSuccess(connection: HttpURLConnection) {
+        val response = connection.inputStream.bufferedReader().readText()
+        try {
+            cachedUsage.set(json.decodeFromString<UsageResponse>(response))
+            errorState.set(UsageErrorState.NONE)
+            lastFetchTime.set(Instant.now())
+            currentBackoffSeconds = REFRESH_INTERVAL_SECONDS
+            LOG.info("Successfully fetched Claude usage data")
+        } catch (e: Exception) {
+            LOG.warn("Failed to parse Claude usage response: ${e.message}")
+            setError(UsageErrorState.PARSE_ERROR)
+        }
+    }
+
+    private fun setError(error: UsageErrorState) {
+        cachedUsage.set(null)
+        errorState.set(error)
+        lastFetchTime.set(Instant.now())
+        currentBackoffSeconds = (currentBackoffSeconds * 2).coerceAtMost(MAX_BACKOFF_SECONDS)
+        LOG.info("Set error $error, backoff ${currentBackoffSeconds}s")
+        notifyListeners()
+    }
+
     fun formatTimeUntilReset(resetsAt: String): String {
         return try {
-            val resetTime = ZonedDateTime.parse(resetsAt, DateTimeFormatter.ISO_OFFSET_DATE_TIME)
-            val now = ZonedDateTime.now()
-            val duration = Duration.between(now, resetTime)
+            val duration = Duration.between(ZonedDateTime.now(), ZonedDateTime.parse(resetsAt, DateTimeFormatter.ISO_OFFSET_DATE_TIME))
 
-            if (duration.isNegative) {
-                "now"
-            } else {
-                val hours = duration.toHours()
-                val minutes = duration.toMinutes() % 60
-                when {
-                    hours > 0 -> "${hours}h ${minutes}m"
-                    minutes > 0 -> "${minutes}m"
-                    else -> "<1m"
-                }
+            if (duration.isNegative) return "now"
+
+            val days = duration.toDays()
+            val hours = duration.toHours() % 24
+            val minutes = duration.toMinutes() % 60
+            when {
+                days > 0 -> "${days}d ${hours}h ${minutes}m"
+                hours > 0 -> "${hours}h ${minutes}m"
+                minutes > 0 -> "${minutes}m"
+                else -> "<1m"
             }
         } catch (e: Exception) {
             "unknown"

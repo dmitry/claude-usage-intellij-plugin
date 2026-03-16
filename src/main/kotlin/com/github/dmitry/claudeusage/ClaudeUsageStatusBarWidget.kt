@@ -17,7 +17,6 @@ import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.geom.RoundRectangle2D
-import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import javax.swing.*
@@ -54,6 +53,12 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         private val COLOR_GRAY = JBColor(Color(200, 200, 200), Color(80, 80, 80))
         private val COLOR_BG = JBColor(Color(240, 240, 240), Color(60, 63, 65))
         private val COLOR_TEXT = JBColor(Color(60, 60, 60), Color(210, 210, 210))
+
+        private val QUOTA_TIERS = listOf(
+            "5-hour" to { usage: UsageResponse -> usage.fiveHour },
+            "7-day" to { usage: UsageResponse -> usage.sevenDay },
+            "7-day Sonnet" to { usage: UsageResponse -> usage.sevenDaySonnet }
+        )
     }
 
     override fun ID(): String = WIDGET_ID
@@ -92,12 +97,7 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
 
     private fun getSelectedQuota(usage: UsageResponse): UsageQuota? {
         val tier = ClaudeUsageSettings.getInstance().state.statusBarQuotaTier
-        return when (tier) {
-            "5-hour" -> usage.fiveHour
-            "7-day" -> usage.sevenDay
-            "7-day Sonnet" -> usage.sevenDaySonnet
-            else -> usage.fiveHour
-        }
+        return QUOTA_TIERS.firstOrNull { it.first == tier }?.second?.invoke(usage) ?: usage.fiveHour
     }
 
     inner class UsageWidgetComponent : JPanel() {
@@ -117,9 +117,7 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         private fun calculateSize(): Dimension {
             val fm = getFontMetrics(font)
             val text = getDisplayText()
-            val textWidth = maxOf(fm.stringWidth(text) + 16, minWidth)
-            val textHeight = fm.height + 6
-            return Dimension(textWidth, textHeight)
+            return Dimension(maxOf(fm.stringWidth(text) + 16, minWidth), fm.height + 6)
         }
 
         override fun getPreferredSize(): Dimension = calculateSize()
@@ -134,60 +132,45 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
 
-            val usage = service.getUsage()
-            val quota = usage?.let { getSelectedQuota(it) }
-            val percentage = quota?.utilization?.toInt() ?: -1
-
+            val percentage = service.getUsage()?.let { getSelectedQuota(it) }?.utilization?.toInt() ?: -1
             val fm = g2d.fontMetrics
             val text = getDisplayText()
-            val textWidth = fm.stringWidth(text)
-            val textHeight = fm.height
-
-            val rectWidth = textWidth + 10
-            val rectHeight = textHeight + 4
+            val rectWidth = fm.stringWidth(text) + 10
+            val rectHeight = fm.height + 4
             val x = (width - rectWidth) / 2
             val y = (height - rectHeight) / 2
+            val rect = RoundRectangle2D.Float(x.toFloat(), y.toFloat(), rectWidth.toFloat(), rectHeight.toFloat(), 6f, 6f)
 
             g2d.color = COLOR_BG
-            g2d.fill(RoundRectangle2D.Float(x.toFloat(), y.toFloat(), rectWidth.toFloat(), rectHeight.toFloat(), 6f, 6f))
+            g2d.fill(rect)
 
             if (percentage >= 0) {
-                val fillColor = getUsageColor(percentage)
-                val fillWidth = (rectWidth * percentage / 100f).coerceAtLeast(6f)
-
-                g2d.color = fillColor
-                g2d.clip = RoundRectangle2D.Float(x.toFloat(), y.toFloat(), rectWidth.toFloat(), rectHeight.toFloat(), 6f, 6f)
-                g2d.fillRect(x, y, fillWidth.toInt(), rectHeight)
+                g2d.color = getUsageColor(percentage)
+                g2d.clip = rect
+                g2d.fillRect(x, y, (rectWidth * percentage / 100f).coerceAtLeast(6f).toInt(), rectHeight)
                 g2d.clip = null
             } else if (service.getError() != UsageErrorState.NONE) {
                 g2d.color = COLOR_GRAY
-                g2d.fill(RoundRectangle2D.Float(x.toFloat(), y.toFloat(), rectWidth.toFloat(), rectHeight.toFloat(), 6f, 6f))
+                g2d.fill(rect)
             }
 
             g2d.color = COLOR_TEXT
-            val textX = x + 5
-            val textY = y + fm.ascent + 2
-            g2d.drawString(text, textX, textY)
-
+            g2d.drawString(text, x + 5, y + fm.ascent + 2)
             g2d.dispose()
         }
 
         private fun getDisplayText(): String {
-            val usage = service.getUsage()
-            val quota = usage?.let { getSelectedQuota(it) }
+            val quota = service.getUsage()?.let { getSelectedQuota(it) }
             if (quota != null) {
-                val percentage = quota.utilization.toInt()
-                val resetIn = service.formatTimeUntilReset(quota.resetsAt)
-                return "$percentage% \u2022 $resetIn"
+                return "${quota.utilization.toInt()}% \u2022 ${service.formatTimeUntilReset(quota.resetsAt)}"
             }
 
-            val error = service.getError()
-            return when (error) {
+            return when (service.getError()) {
                 UsageErrorState.NO_CREDENTIALS -> "Claude: no creds"
                 UsageErrorState.AUTH_FAILED -> "Claude: auth err"
                 UsageErrorState.NETWORK_ERROR -> "Claude: offline"
-                UsageErrorState.HTTP_ERROR -> "Claude: error"
-                UsageErrorState.PARSE_ERROR -> "Claude: error"
+                UsageErrorState.RATE_LIMITED -> "Claude: rate limited"
+                UsageErrorState.HTTP_ERROR, UsageErrorState.PARSE_ERROR -> "Claude: error"
                 UsageErrorState.NO_ACCESS_TOKEN -> "Claude: no token"
                 UsageErrorState.NONE -> "Claude: loading..."
             }
@@ -205,41 +188,19 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
 
         if (usage == null) {
             val errorMessage = if (error != UsageErrorState.NONE) error.message else "Loading usage data..."
-            panel.add(JBLabel(errorMessage).apply {
-                alignmentX = Component.LEFT_ALIGNMENT
-            })
+            panel.add(JBLabel(errorMessage).apply { alignmentX = Component.LEFT_ALIGNMENT })
             panel.add(Box.createVerticalStrut(8))
 
-            if (error == UsageErrorState.NO_CREDENTIALS) {
-                panel.add(JBLabel("Run 'claude' in terminal to authenticate").apply {
-                    font = font.deriveFont(font.size - 1f)
-                    foreground = UIUtil.getContextHelpForeground()
-                    alignmentX = Component.LEFT_ALIGNMENT
-                })
-            } else if (error == UsageErrorState.AUTH_FAILED) {
-                panel.add(JBLabel("Run 'claude' in terminal to re-authenticate").apply {
-                    font = font.deriveFont(font.size - 1f)
-                    foreground = UIUtil.getContextHelpForeground()
-                    alignmentX = Component.LEFT_ALIGNMENT
-                })
+            if (error == UsageErrorState.NO_CREDENTIALS || error == UsageErrorState.AUTH_FAILED) {
+                val action = if (error == UsageErrorState.NO_CREDENTIALS) "authenticate" else "re-authenticate"
+                panel.add(createHintLabel("Run 'claude' in terminal to $action"))
             }
         } else {
-            usage.fiveHour?.let {
-                val resetIn = service.formatTimeUntilReset(it.resetsAt)
-                panel.add(createUsageRow("5-hour", it.utilization.toInt(), resetIn))
-                panel.add(Box.createVerticalStrut(12))
-            }
-
-            usage.sevenDay?.let {
-                val resetIn = service.formatTimeUntilReset(it.resetsAt)
-                panel.add(createUsageRow("7-day", it.utilization.toInt(), resetIn))
-                panel.add(Box.createVerticalStrut(12))
-            }
-
-            usage.sevenDaySonnet?.let {
-                val resetIn = service.formatTimeUntilReset(it.resetsAt)
-                panel.add(createUsageRow("7-day Sonnet", it.utilization.toInt(), resetIn))
-                panel.add(Box.createVerticalStrut(12))
+            QUOTA_TIERS.forEach { (label, extractor) ->
+                extractor(usage)?.let { quota ->
+                    panel.add(createUsageRow(label, quota.utilization.toInt(), service.formatTimeUntilReset(quota.resetsAt)))
+                    panel.add(Box.createVerticalStrut(12))
+                }
             }
 
             usage.extraUsage?.let { extra ->
@@ -259,12 +220,9 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
 
         bottomPanel.add(createLinkLabel(), BorderLayout.WEST)
 
-        val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
-            isOpaque = false
-        }
+        val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply { isOpaque = false }
 
-        val lastFetch = service.getLastFetchTime()
-        if (lastFetch != null) {
+        service.getLastFetchTime()?.let { lastFetch ->
             val formatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
             rightPanel.add(JBLabel(formatter.format(lastFetch)).apply {
                 font = font.deriveFont(font.size - 1f)
@@ -273,11 +231,16 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         }
 
         val refreshButton = JButton(AllIcons.Actions.Refresh).apply {
-            toolTipText = "Refresh usage data"
             isBorderPainted = false
             isContentAreaFilled = false
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             preferredSize = Dimension(20, 20)
+            if (service.canRefresh()) {
+                toolTipText = "Refresh usage data"
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            } else {
+                toolTipText = "Refreshed ${service.secondsSinceLastFetch()}s ago"
+                isEnabled = false
+            }
         }
         rightPanel.add(refreshButton)
 
@@ -321,28 +284,28 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         headerPanel.add(JBLabel(label), BorderLayout.WEST)
         headerPanel.add(JBLabel("$percentage%"), BorderLayout.EAST)
 
-        val progressBar = JProgressBar(0, 100).apply {
+        row.add(headerPanel)
+        row.add(Box.createVerticalStrut(4))
+        row.add(JProgressBar(0, 100).apply {
             value = percentage
             isStringPainted = false
             preferredSize = Dimension(200, 8)
             maximumSize = Dimension(200, 8)
             alignmentX = Component.LEFT_ALIGNMENT
             foreground = getUsageColor(percentage)
-        }
+        })
+        row.add(Box.createVerticalStrut(2))
+        row.add(createHintLabel("resets in $resetIn"))
 
-        val resetLabel = JBLabel("resets in $resetIn").apply {
+        return row
+    }
+
+    private fun createHintLabel(text: String): JBLabel {
+        return JBLabel(text).apply {
             font = font.deriveFont(font.size - 1f)
             foreground = UIUtil.getContextHelpForeground()
             alignmentX = Component.LEFT_ALIGNMENT
         }
-
-        row.add(headerPanel)
-        row.add(Box.createVerticalStrut(4))
-        row.add(progressBar)
-        row.add(Box.createVerticalStrut(2))
-        row.add(resetLabel)
-
-        return row
     }
 
     private fun createLinkLabel(): JBLabel {
@@ -355,5 +318,4 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
             })
         }
     }
-
 }
