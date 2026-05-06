@@ -17,7 +17,8 @@ class ClaudeUsageSettings : PersistentStateComponent<ClaudeUsageSettings.State> 
         var statusBarQuotaTier: String = DEFAULT_QUOTA_TIER,
         var yellowThreshold: Int = DEFAULT_YELLOW_THRESHOLD,
         var redThreshold: Int = DEFAULT_RED_THRESHOLD,
-        var credentialsFilePath: String = DEFAULT_CREDENTIALS_PATH
+        var credentialsFilePath: String = DEFAULT_CREDENTIALS_PATH,
+        var refreshIntervalMinutes: Int = DEFAULT_REFRESH_INTERVAL_MINUTES
     )
 
     private var myState = State()
@@ -33,6 +34,7 @@ class ClaudeUsageSettings : PersistentStateComponent<ClaudeUsageSettings.State> 
         const val DEFAULT_YELLOW_THRESHOLD = 70
         const val DEFAULT_RED_THRESHOLD = 90
         const val DEFAULT_CREDENTIALS_PATH = "~/.claude/.credentials.json"
+        const val DEFAULT_REFRESH_INTERVAL_MINUTES = 1
 
         val QUOTA_TIER_OPTIONS = arrayOf("5-hour", "7-day", "7-day Sonnet")
 

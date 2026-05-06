@@ -162,7 +162,8 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         private fun getDisplayText(): String {
             val quota = service.getUsage()?.let { getSelectedQuota(it) }
             if (quota != null) {
-                return "${quota.utilization.toInt()}% \u2022 ${service.formatTimeUntilReset(quota.resetsAt)}"
+                val percent = "${quota.utilization.toInt()}%"
+                return if (quota.resetsAt != null) "$percent \u2022 ${service.formatTimeUntilReset(quota.resetsAt)}" else percent
             }
 
             return when (service.getError()) {
@@ -198,7 +199,8 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         } else {
             QUOTA_TIERS.forEach { (label, extractor) ->
                 extractor(usage)?.let { quota ->
-                    panel.add(createUsageRow(label, quota.utilization.toInt(), service.formatTimeUntilReset(quota.resetsAt)))
+                    val resetIn = quota.resetsAt?.let { service.formatTimeUntilReset(it) }
+                    panel.add(createUsageRow(label, quota.utilization.toInt(), resetIn))
                     panel.add(Box.createVerticalStrut(12))
                 }
             }
@@ -270,7 +272,7 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
         popup.showUnderneathOf(component)
     }
 
-    private fun createUsageRow(label: String, percentage: Int, resetIn: String): JPanel {
+    private fun createUsageRow(label: String, percentage: Int, resetIn: String?): JPanel {
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
@@ -294,8 +296,10 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
             alignmentX = Component.LEFT_ALIGNMENT
             foreground = getUsageColor(percentage)
         })
-        row.add(Box.createVerticalStrut(2))
-        row.add(createHintLabel("resets in $resetIn"))
+        if (resetIn != null) {
+            row.add(Box.createVerticalStrut(2))
+            row.add(createHintLabel("resets in $resetIn"))
+        }
 
         return row
     }

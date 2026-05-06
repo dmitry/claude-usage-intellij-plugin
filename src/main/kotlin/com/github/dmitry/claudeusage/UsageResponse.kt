@@ -14,7 +14,7 @@ data class UsageResponse(
 @Serializable
 data class UsageQuota(
     val utilization: Double,
-    @SerialName("resets_at") val resetsAt: String
+    @SerialName("resets_at") val resetsAt: String? = null
 )
 
 @Serializable

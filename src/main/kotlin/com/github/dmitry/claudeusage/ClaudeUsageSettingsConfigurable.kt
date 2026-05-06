@@ -23,7 +23,8 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         return component.getQuotaTier() != state.statusBarQuotaTier ||
             component.getYellowThreshold() != state.yellowThreshold ||
             component.getRedThreshold() != state.redThreshold ||
-            component.getCredentialsPath() != state.credentialsFilePath
+            component.getCredentialsPath() != state.credentialsFilePath ||
+            component.getRefreshIntervalMinutes() != state.refreshIntervalMinutes
     }
 
     override fun apply() {
@@ -33,6 +34,7 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         state.yellowThreshold = component.getYellowThreshold()
         state.redThreshold = component.getRedThreshold()
         state.credentialsFilePath = component.getCredentialsPath()
+        state.refreshIntervalMinutes = component.getRefreshIntervalMinutes()
     }
 
     override fun reset() {
@@ -42,6 +44,7 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         component.setYellowThreshold(state.yellowThreshold)
         component.setRedThreshold(state.redThreshold)
         component.setCredentialsPath(state.credentialsFilePath)
+        component.setRefreshIntervalMinutes(state.refreshIntervalMinutes)
     }
 
     override fun disposeUIResources() {

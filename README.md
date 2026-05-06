@@ -10,7 +10,7 @@ A simple IntelliJ plugin that displays your Claude subscription usage in the IDE
 
 ## Features
 
-- Real-time usage percentage in the status bar with automatic refresh every 60 seconds
+- Real-time usage percentage in the status bar with automatic refresh every minute (configurable)
 - Manual refresh button in the popup for instant updates
 - Color-coded progress indicator (green → yellow → red)
 - Time until quota reset
@@ -20,6 +20,7 @@ A simple IntelliJ plugin that displays your Claude subscription usage in the IDE
 - Last fetch timestamp in the popup
 - Configurable settings (Settings → Tools → Claude Code Usage):
   - Status bar quota display (5-hour, 7-day, or 7-day Sonnet)
+  - Auto-refresh interval (1–60 minutes, default 1)
   - Warning color thresholds (yellow/red)
   - Custom credentials file path
   - Reset to defaults button

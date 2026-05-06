@@ -13,6 +13,7 @@ class ClaudeUsageSettingsComponent {
     private val yellowThresholdField = JSpinner(SpinnerNumberModel(70, 0, 100, 1))
     private val redThresholdField = JSpinner(SpinnerNumberModel(90, 0, 100, 1))
     private val credentialsPathField = JBTextField()
+    private val refreshIntervalField = JSpinner(SpinnerNumberModel(ClaudeUsageSettings.DEFAULT_REFRESH_INTERVAL_MINUTES, 1, 60, 1))
     private val resetButton = JButton("Reset to Defaults")
 
     init {
@@ -25,6 +26,7 @@ class ClaudeUsageSettingsComponent {
             .addLabeledComponent(JBLabel("Yellow warning threshold (%):"), yellowThresholdField, 1, false)
             .addLabeledComponent(JBLabel("Red warning threshold (%):"), redThresholdField, 1, false)
             .addLabeledComponent(JBLabel("Credentials file path:"), credentialsPathField, 1, false)
+            .addLabeledComponent(JBLabel("Refresh interval (minutes):"), refreshIntervalField, 1, false)
             .addSeparator()
             .addComponent(resetPanel)
             .addComponentFillVertically(JPanel(), 0)
@@ -47,6 +49,8 @@ class ClaudeUsageSettingsComponent {
 
     fun getCredentialsPath(): String = credentialsPathField.text
 
+    fun getRefreshIntervalMinutes(): Int = refreshIntervalField.value as Int
+
     fun setQuotaTier(tier: String) {
         quotaTierComboBox.selectedItem = tier
     }
@@ -63,10 +67,15 @@ class ClaudeUsageSettingsComponent {
         credentialsPathField.text = path
     }
 
+    fun setRefreshIntervalMinutes(value: Int) {
+        refreshIntervalField.value = value
+    }
+
     private fun resetToDefaults() {
         setQuotaTier(ClaudeUsageSettings.DEFAULT_QUOTA_TIER)
         setYellowThreshold(ClaudeUsageSettings.DEFAULT_YELLOW_THRESHOLD)
         setRedThreshold(ClaudeUsageSettings.DEFAULT_RED_THRESHOLD)
         setCredentialsPath(ClaudeUsageSettings.DEFAULT_CREDENTIALS_PATH)
+        setRefreshIntervalMinutes(ClaudeUsageSettings.DEFAULT_REFRESH_INTERVAL_MINUTES)
     }
 }

@@ -37,14 +37,17 @@ class ClaudeUsageService : Disposable {
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val listeners = mutableListOf<() -> Unit>()
     @Volatile
-    private var currentBackoffSeconds = REFRESH_INTERVAL_SECONDS
+    private var currentBackoffSeconds = getRefreshIntervalSeconds()
 
     companion object {
         private const val USAGE_API_URL = "https://api.anthropic.com/api/oauth/usage"
         private const val ANTHROPIC_BETA = "oauth-2025-04-20"
-        private const val USER_AGENT = "claude-code/2.1.69"
-        private const val REFRESH_INTERVAL_SECONDS = 60L
-        private const val MAX_BACKOFF_SECONDS = 960L
+        private const val USER_AGENT = "claude-code/2.1.131"
+        private const val MAX_BACKOFF_SECONDS = 3600L
+        private const val MANUAL_REFRESH_COOLDOWN_SECONDS = 5L
+
+        private fun getRefreshIntervalSeconds(): Long =
+            ClaudeUsageSettings.getInstance().state.refreshIntervalMinutes * 60L
 
         fun getInstance(): ClaudeUsageService =
             ApplicationManager.getApplication().getService(ClaudeUsageService::class.java)
@@ -86,7 +89,7 @@ class ClaudeUsageService : Disposable {
 
     fun canRefresh(): Boolean {
         val last = lastFetchTime.get() ?: return true
-        return Duration.between(last, Instant.now()).seconds >= REFRESH_INTERVAL_SECONDS
+        return Duration.between(last, Instant.now()).seconds >= MANUAL_REFRESH_COOLDOWN_SECONDS
     }
 
     fun secondsSinceLastFetch(): Long? {
@@ -161,7 +164,7 @@ class ClaudeUsageService : Disposable {
             cachedUsage.set(json.decodeFromString<UsageResponse>(response))
             errorState.set(UsageErrorState.NONE)
             lastFetchTime.set(Instant.now())
-            currentBackoffSeconds = REFRESH_INTERVAL_SECONDS
+            currentBackoffSeconds = getRefreshIntervalSeconds()
             LOG.info("Successfully fetched Claude usage data")
         } catch (e: Exception) {
             LOG.warn("Failed to parse Claude usage response: ${e.message}")
@@ -178,7 +181,8 @@ class ClaudeUsageService : Disposable {
         notifyListeners()
     }
 
-    fun formatTimeUntilReset(resetsAt: String): String {
+    fun formatTimeUntilReset(resetsAt: String?): String {
+        if (resetsAt == null) return "n/a"
         return try {
             val duration = Duration.between(ZonedDateTime.now(), ZonedDateTime.parse(resetsAt, DateTimeFormatter.ISO_OFFSET_DATE_TIME))
 

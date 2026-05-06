@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.4] - 2026-05-06
+
+### Fixed
+- Parse error when API returns `resets_at: null` for unused quotas (e.g. `seven_day_sonnet`) — the widget no longer falls back to "Claude: error" when usage is otherwise valid
+- Manual refresh button stayed disabled for the full auto-refresh interval; now has its own 5-second cooldown decoupled from the scheduler
+
+### Added
+- Configurable auto-refresh interval setting (1–60 minutes, default 1 minute)
+
+### Changed
+- Reset-time hint hidden in popup and status bar when the API reports no reset time
+- Max backoff on errors increased to 60 minutes
+
 ## [0.2.3] - 2026-03-12
 
 ### Improved
