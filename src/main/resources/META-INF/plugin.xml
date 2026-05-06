@@ -12,6 +12,7 @@
     <b>Features:</b>
     <ul>
         <li>Real-time usage percentage with auto-refresh every minute (configurable)</li>
+        <li>Reads credentials from the macOS Keychain (where Claude Code stores them) with fallback to the credentials file</li>
         <li>Manual refresh button for instant updates</li>
         <li>Color-coded progress indicator (green → yellow → red)</li>
         <li>Time until quota reset</li>
@@ -26,6 +27,13 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>0.3.0</b>
+    <ul>
+        <li>macOS Keychain support: reads OAuth tokens from the Keychain (where Claude Code now stores them), with fallback to the credentials file</li>
+        <li>New "Use macOS Keychain" setting (default on, macOS only)</li>
+        <li>Dedicated error states and actionable popup hints for keychain access denied / prompt timeout</li>
+        <li>On first run, macOS will prompt once for keychain access — click Always Allow for your IDE</li>
+    </ul>
     <b>0.2.4</b>
     <ul>
         <li>Fixed parse error when API returns null reset time for unused quotas (widget no longer falls into error state)</li>

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0] - 2026-05-06
+
+### Added
+- macOS Keychain support — Claude Code on macOS now stores credentials in the Keychain instead of `~/.claude/.credentials.json`; the plugin reads them via the `security` CLI (same approach the CLI itself uses)
+- New "Use macOS Keychain" setting (default on, macOS only) — falls back to the credentials file when the keychain entry is missing
+- Distinct error states for keychain access denied, prompt timed out, and other keychain failures, with actionable hints in the popup ("Open Keychain Access > Always Allow")
+
+### Notes
+- On first read after install, macOS will show a one-time prompt; click **Always Allow** so the plugin can access the `Claude Code-credentials` entry without further interruptions
+- Over SSH the macOS Keychain is locked — same limitation as the official CLI
+
 ## [0.2.4] - 2026-05-06
 
 ### Fixed

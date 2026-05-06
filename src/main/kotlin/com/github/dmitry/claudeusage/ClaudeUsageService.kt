@@ -18,13 +18,16 @@ import java.util.concurrent.atomic.AtomicReference
 
 enum class UsageErrorState(val message: String) {
     NONE(""),
-    NO_CREDENTIALS("Credentials file not found"),
-    NO_ACCESS_TOKEN("No access token found in credentials file"),
-    AUTH_FAILED("Authentication failed — token may be expired. Run 'claude' to re-authenticate"),
+    NO_CREDENTIALS("Credentials not found - run 'claude' to authenticate"),
+    NO_ACCESS_TOKEN("No access token found in credentials"),
+    AUTH_FAILED("Authentication failed - token may be expired. Run 'claude' to re-authenticate"),
     HTTP_ERROR("Server returned an error"),
-    NETWORK_ERROR("Network error — check your internet connection"),
-    RATE_LIMITED("Rate limited — will retry shortly"),
-    PARSE_ERROR("Failed to parse API response")
+    NETWORK_ERROR("Network error - check your internet connection"),
+    RATE_LIMITED("Rate limited - will retry shortly"),
+    PARSE_ERROR("Failed to parse API response"),
+    KEYCHAIN_DENIED("Keychain access denied - open Keychain Access, find 'Claude Code-credentials', and click Always Allow for your IDE"),
+    KEYCHAIN_TIMEOUT("Keychain prompt timed out - approve access in the macOS dialog and refresh"),
+    KEYCHAIN_ERROR("Failed to read macOS Keychain")
 }
 
 @Service(Service.Level.APP)
@@ -103,15 +106,12 @@ class ClaudeUsageService : Disposable {
             return
         }
 
-        if (!ClaudeCredentialsReader.hasCredentials()) {
-            setError(UsageErrorState.NO_CREDENTIALS)
-            return
-        }
-
-        val accessToken = ClaudeCredentialsReader.readAccessToken()
-        if (accessToken == null) {
-            setError(UsageErrorState.NO_ACCESS_TOKEN)
-            return
+        val accessToken = when (val r = ClaudeCredentialsReader.read()) {
+            is ClaudeCredentialsReader.Result.Success -> r.accessToken
+            is ClaudeCredentialsReader.Result.Failure -> {
+                setError(r.error)
+                return
+            }
         }
 
         try {

@@ -33,7 +33,14 @@ A simple IntelliJ plugin that displays your Claude subscription usage in the IDE
 - IntelliJ IDEA 2024.1+ (works with all JetBrains IDEs: WebStorm, PyCharm, RubyMine, etc.)
 - Claude Code CLI installed and authenticated
 
-The plugin reads credentials from `~/.claude/.credentials.json` which is created when you sign in to Claude Code CLI.
+The plugin reads credentials from:
+
+- **macOS:** the system Keychain entry `Claude Code-credentials` (where Claude Code CLI now stores them by default). On first run, macOS will show a one-time access dialog — click **Always Allow** for your IDE so the plugin can read the entry without further prompts. Falls back to `~/.claude/.credentials.json` if the keychain entry is missing.
+- **Linux / Windows:** `~/.claude/.credentials.json` (created when you sign in to Claude Code CLI).
+
+The credentials path and the macOS Keychain toggle are both configurable in **Settings -> Tools -> Claude Code Usage**.
+
+> **Note (SSH):** the macOS Keychain is locked over SSH — same limitation as the official CLI. Either run `security unlock-keychain` first or fall back to the file path.
 
 ## Development
 

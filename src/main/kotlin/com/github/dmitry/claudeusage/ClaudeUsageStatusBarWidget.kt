@@ -173,6 +173,9 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
                 UsageErrorState.RATE_LIMITED -> "Claude: rate limited"
                 UsageErrorState.HTTP_ERROR, UsageErrorState.PARSE_ERROR -> "Claude: error"
                 UsageErrorState.NO_ACCESS_TOKEN -> "Claude: no token"
+                UsageErrorState.KEYCHAIN_DENIED -> "Claude: keychain denied"
+                UsageErrorState.KEYCHAIN_TIMEOUT -> "Claude: keychain timeout"
+                UsageErrorState.KEYCHAIN_ERROR -> "Claude: keychain err"
                 UsageErrorState.NONE -> "Claude: loading..."
             }
         }
@@ -192,9 +195,18 @@ class ClaudeUsageStatusBarWidget : CustomStatusBarWidget {
             panel.add(JBLabel(errorMessage).apply { alignmentX = Component.LEFT_ALIGNMENT })
             panel.add(Box.createVerticalStrut(8))
 
-            if (error == UsageErrorState.NO_CREDENTIALS || error == UsageErrorState.AUTH_FAILED) {
-                val action = if (error == UsageErrorState.NO_CREDENTIALS) "authenticate" else "re-authenticate"
-                panel.add(createHintLabel("Run 'claude' in terminal to $action"))
+            when (error) {
+                UsageErrorState.NO_CREDENTIALS ->
+                    panel.add(createHintLabel("Run 'claude' in terminal to authenticate"))
+                UsageErrorState.AUTH_FAILED ->
+                    panel.add(createHintLabel("Run 'claude' in terminal to re-authenticate"))
+                UsageErrorState.KEYCHAIN_DENIED -> {
+                    panel.add(createHintLabel("Open Keychain Access, search for 'Claude Code-credentials',"))
+                    panel.add(createHintLabel("then in Access Control click Always Allow for your IDE."))
+                }
+                UsageErrorState.KEYCHAIN_TIMEOUT ->
+                    panel.add(createHintLabel("Approve the macOS Keychain dialog, then click Refresh."))
+                else -> { /* no extra hint */ }
             }
         } else {
             QUOTA_TIERS.forEach { (label, extractor) ->
