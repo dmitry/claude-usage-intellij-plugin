@@ -32,7 +32,7 @@ enum class UsageErrorState(val message: String) {
     PROXY_ERROR("Proxy error - check the Proxy URL in Settings > Tools > Claude Code Usage"),
     RATE_LIMITED("Rate limited - will retry shortly"),
     PARSE_ERROR("Failed to parse API response"),
-    KEYCHAIN_DENIED("Keychain access denied - open Keychain Access, find 'Claude Code-credentials', and click Always Allow for your IDE"),
+    KEYCHAIN_DENIED("Keychain access denied - grant your IDE access to 'Claude Code-credentials' (see the hint below)"),
     KEYCHAIN_TIMEOUT("Keychain prompt timed out - approve access in the macOS dialog and refresh"),
     KEYCHAIN_ERROR("Failed to read macOS Keychain")
 }
@@ -134,7 +134,8 @@ class ClaudeUsageService : Disposable {
         try {
             fetchFromApi(accessToken)
         } catch (e: Exception) {
-            LOG.warn("Error fetching Claude usage: ${e.message}")
+            // Connection failures name the proxy they tried, which may carry credentials.
+            LOG.warn("Error fetching Claude usage: ${Secrets.redactUrlCredentials(e.message ?: Secrets.safeMessage(e))}")
             setError(classifyFetchError(e))
         }
 

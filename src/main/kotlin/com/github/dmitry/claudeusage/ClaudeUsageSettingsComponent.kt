@@ -35,6 +35,11 @@ class ClaudeUsageSettingsComponent {
     private val proxyDetectedLabel = JBLabel().apply {
         foreground = JBColor.GRAY
     }
+    private val proxyCredentialsLabel = JBLabel(
+        "On Apply, any password you enter moves to the IDE password safe - it is never stored in plain text."
+    ).apply {
+        foreground = JBColor.GRAY
+    }
     private val resetButton = JButton("Reset to Defaults")
 
     init {
@@ -52,6 +57,7 @@ class ClaudeUsageSettingsComponent {
             .addComponent(notifyOnThresholdCheckBox)
             .addLabeledComponent(JBLabel("Proxy URL (empty = auto-detect, 'none' = direct):"), proxyUrlField, 1, false)
             .addComponent(proxyDetectedLabel)
+            .addComponent(proxyCredentialsLabel)
             .addSeparator()
             .addComponent(resetPanel)
             .addComponentFillVertically(JPanel(), 0)
@@ -119,7 +125,8 @@ class ClaudeUsageSettingsComponent {
     fun refreshProxyDetectedLabel() {
         val detected = ClaudeProxyResolver.autoDetectedProxyUrl()
         proxyDetectedLabel.text = if (detected != null) {
-            "Auto-detected: $detected"
+            // An auto-detected URL can carry credentials; never render them on screen.
+            "Auto-detected: ${Secrets.redactUrlCredentials(detected)}"
         } else {
             "No proxy auto-detected (checks ~/.claude/settings.json, then HTTPS_PROXY/HTTP_PROXY)"
         }

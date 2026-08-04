@@ -43,7 +43,13 @@ data class OAuthCredentials(
     val expiresAt: Long? = null,
     val subscriptionType: String? = null,
     val rateLimitTier: String? = null
-)
+) {
+    // The generated data-class toString() prints both tokens verbatim; interpolating an instance
+    // into any log statement would leak them. Non-secret fields stay visible for diagnostics.
+    override fun toString(): String =
+        "OAuthCredentials(accessToken=***, refreshToken=***, expiresAt=$expiresAt, " +
+            "subscriptionType=$subscriptionType, rateLimitTier=$rateLimitTier)"
+}
 
 @Serializable
 data class ClaudeSettingsFile(

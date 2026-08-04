@@ -42,6 +42,26 @@ class ClaudeUsageSettingsConfigurable : Configurable {
             )
         }
 
+        // The proxy password goes to the IDE password safe; ClaudeCodeUsage.xml keeps only
+        // scheme/host/port plus the non-secret username. Upstream wrote the whole
+        // "user:password@host" string there in plain text.
+        val previous = ProxyUrlParser.parse(state.proxyUrl)
+        val parsed = ProxyUrlParser.parse(proxyUrl)
+        val username = parsed?.username
+        val password = parsed?.password
+        if (parsed?.type == ProxyUrlParser.Type.HTTP && username != null && password != null) {
+            ProxyCredentialStore.savePassword(parsed.host, parsed.port, username, password)
+        }
+        // Drop a stored password as soon as its endpoint or username stops applying, so it is never
+        // carried over to a proxy it was not entered for.
+        val endpointChanged = parsed == null || previous?.host != parsed.host || previous.port != parsed.port
+        if (previous != null && (endpointChanged || username == null)) {
+            ProxyCredentialStore.clear(previous.host, previous.port)
+        }
+        val sanitizedProxyUrl = ProxyUrlParser.stripPassword(proxyUrl)
+        // Mirror the sanitized value back into the field so isModified() settles.
+        component.setProxyUrl(sanitizedProxyUrl)
+
         state.statusBarQuotaTier = component.getQuotaTier()
         state.yellowThreshold = component.getYellowThreshold()
         state.redThreshold = component.getRedThreshold()
@@ -49,7 +69,8 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         state.refreshIntervalMinutes = component.getRefreshIntervalMinutes()
         state.useMacKeychain = component.getUseMacKeychain()
         state.notifyOnThreshold = component.getNotifyOnThreshold()
-        state.proxyUrl = proxyUrl
+        state.proxyUrl = sanitizedProxyUrl
+        component.refreshProxyDetectedLabel()
     }
 
     override fun reset() {

@@ -10,7 +10,12 @@ object ClaudeCredentialsReader {
     private val json = Json { ignoreUnknownKeys = true }
 
     sealed class Result {
-        data class Success(val accessToken: String) : Result()
+        data class Success(val accessToken: String) : Result() {
+            // The generated data-class toString() prints the token verbatim, so any future
+            // LOG.info("$result") would leak it. Keep the redaction with the token.
+            override fun toString(): String = "Success(accessToken=***)"
+        }
+
         data class Failure(val error: UsageErrorState) : Result()
     }
 
@@ -55,7 +60,10 @@ object ClaudeCredentialsReader {
             if (token.isNullOrBlank()) Result.Failure(UsageErrorState.NO_ACCESS_TOKEN)
             else Result.Success(token)
         } catch (e: Exception) {
-            LOG.warn("Failed to parse Claude credentials: ${e.message}")
+            // kotlinx.serialization appends a "JSON input: ..." excerpt of what it was decoding to
+            // its exception message. That input is the credentials blob, so logging the message
+            // would put the access token in idea.log. Only the exception type is safe here.
+            LOG.warn("Failed to parse Claude credentials: ${Secrets.safeMessage(e)}")
             Result.Failure(UsageErrorState.NO_ACCESS_TOKEN)
         }
     }
@@ -63,7 +71,7 @@ object ClaudeCredentialsReader {
     private fun File.readTextSafely(): String? = try {
         readText()
     } catch (e: Exception) {
-        LOG.warn("Failed to read Claude credentials file: ${e.message}")
+        LOG.warn("Failed to read Claude credentials file at $absolutePath: ${Secrets.safeMessage(e)}")
         null
     }
 

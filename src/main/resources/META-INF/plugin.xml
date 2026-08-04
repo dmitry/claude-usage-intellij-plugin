@@ -1,7 +1,10 @@
 <idea-plugin>
-    <id>com.github.dmitry.claudeusage</id>
-    <name>Claude Code Usage</name>
-    <vendor url="https://github.com/nicedoc">Dmitry Polushkin</vendor>
+    <!-- Deliberately NOT the upstream id (com.github.dmitry.claudeusage): a distinct id keeps the
+         IDE from matching this build against the Marketplace listing and offering/applying an
+         update that would silently replace the local security fixes. -->
+    <id>com.github.dmitry.claudeusage.local</id>
+    <name>Claude Code Usage (local build)</name>
+    <vendor url="https://github.com/dmitry/claude-usage-intellij-plugin">Dmitry Polushkin (locally patched fork)</vendor>
 
     <description><![CDATA[
     Displays your Claude subscription usage limits in the IDE status bar.

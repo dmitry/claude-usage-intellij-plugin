@@ -5,7 +5,6 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Proxy
-import java.net.URI
 
 data class ResolvedProxy(
     val proxy: Proxy,
@@ -17,23 +16,44 @@ object ClaudeProxyResolver {
     private val LOG = Logger.getInstance(ClaudeProxyResolver::class.java)
     private val json = Json { ignoreUnknownKeys = true }
     private val PROXY_ENV_KEYS = listOf("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
-    private val SOCKS_SCHEMES = setOf("socks", "socks4", "socks5")
-    private val DIRECT_KEYWORDS = setOf("none", "direct", "off")
-    private const val DEFAULT_HTTP_PROXY_PORT = 80
-    private const val DEFAULT_SOCKS_PORT = 1080
 
     fun resolve(): ResolvedProxy? {
         val url = effectiveProxyUrl() ?: return null
-        if (isDirect(url)) return null
-        return parse(url)
+        if (ProxyUrlParser.isDirect(url)) return null
+
+        val parsed = ProxyUrlParser.parse(url)
+        if (parsed == null) {
+            LOG.warn("Failed to parse proxy URL: ${Secrets.redactUrlCredentials(url)}")
+            return null
+        }
+
+        val proxy = Proxy(
+            if (parsed.type == ProxyUrlParser.Type.SOCKS) Proxy.Type.SOCKS else Proxy.Type.HTTP,
+            InetSocketAddress(parsed.host, parsed.port)
+        )
+
+        if (parsed.type == ProxyUrlParser.Type.SOCKS) {
+            // The JDK only reads SOCKS credentials from the JVM-wide default Authenticator,
+            // which the plugin must not replace, so they are dropped here.
+            if (parsed.username != null) {
+                LOG.warn("Credentials in a SOCKS proxy URL are not supported and will be ignored")
+            }
+            return ResolvedProxy(proxy)
+        }
+
+        // The password is kept in the IDE password safe, so the URL persisted in ClaudeCodeUsage.xml
+        // holds only scheme/host/port and the username. The stored entry is scoped to this exact
+        // endpoint and username, so it cannot be sent to a proxy it was not entered for.
+        val username = parsed.username
+        val password = parsed.password
+            ?: username?.let { ProxyCredentialStore.loadPassword(parsed.host, parsed.port, it) }
+        return ResolvedProxy(proxy, username, password)
     }
 
     fun isValidProxyUrl(raw: String): Boolean {
         val value = raw.trim()
-        return value.isEmpty() || isDirect(value) || parse(value) != null
+        return value.isEmpty() || ProxyUrlParser.isDirect(value) || ProxyUrlParser.parse(value) != null
     }
-
-    private fun isDirect(url: String): Boolean = url.trim().lowercase() in DIRECT_KEYWORDS
 
     fun autoDetectedProxyUrl(): String? {
         readFromClaudeSettingsFile()?.let { return it }
@@ -52,31 +72,9 @@ object ClaudeProxyResolver {
             val env = json.decodeFromString<ClaudeSettingsFile>(file.readText()).env ?: return null
             PROXY_ENV_KEYS.firstNotNullOfOrNull { env[it]?.trim()?.takeIf { url -> url.isNotEmpty() } }
         } catch (e: Exception) {
-            LOG.warn("Failed to read Claude settings.json for proxy config: ${e.message}")
-            null
-        }
-    }
-
-    private fun parse(raw: String): ResolvedProxy? {
-        return try {
-            val uri = if ("://" in raw) URI(raw) else URI("http://$raw")
-            val host = uri.host ?: return null
-            val socks = uri.scheme?.lowercase() in SOCKS_SCHEMES
-            val type = if (socks) Proxy.Type.SOCKS else Proxy.Type.HTTP
-            val port = if (uri.port != -1) uri.port else if (socks) DEFAULT_SOCKS_PORT else DEFAULT_HTTP_PROXY_PORT
-            val (user, pass) = uri.userInfo?.split(":", limit = 2)
-                ?.let { it.getOrNull(0) to it.getOrNull(1) } ?: (null to null)
-            val proxy = Proxy(type, InetSocketAddress(host, port))
-            if (socks && user != null) {
-                // The JDK only reads SOCKS credentials from the JVM-wide default Authenticator,
-                // which the plugin must not replace, so they are dropped here.
-                LOG.warn("Credentials in a SOCKS proxy URL are not supported and will be ignored")
-                ResolvedProxy(proxy)
-            } else {
-                ResolvedProxy(proxy, user, pass)
-            }
-        } catch (e: Exception) {
-            LOG.warn("Failed to parse proxy URL: ${e.message}")
+            // That env block routinely holds API keys and the decoding exception quotes the input,
+            // so only the exception's type is logged.
+            LOG.warn("Failed to read ~/.claude/settings.json for proxy config: ${Secrets.safeMessage(e)}")
             null
         }
     }

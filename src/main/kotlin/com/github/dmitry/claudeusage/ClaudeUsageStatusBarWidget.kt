@@ -334,7 +334,9 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
                     panel.add(createHintLabel("Run 'claude' in terminal to re-authenticate"))
                 UsageErrorState.KEYCHAIN_DENIED -> {
                     panel.add(createHintLabel("Open Keychain Access, search for 'Claude Code-credentials',"))
-                    panel.add(createHintLabel("then in Access Control click Always Allow for your IDE."))
+                    panel.add(createHintLabel("then in Access Control grant your IDE access."))
+                    panel.add(createHintLabel("'Allow' asks again on every refresh. 'Always Allow' gives this IDE"))
+                    panel.add(createHintLabel("- and every plugin inside it - silent access to the token."))
                 }
                 UsageErrorState.KEYCHAIN_TIMEOUT ->
                     panel.add(createHintLabel("Approve the macOS Keychain dialog, then click Refresh."))
