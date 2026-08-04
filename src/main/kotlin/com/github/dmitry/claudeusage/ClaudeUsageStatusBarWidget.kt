@@ -58,11 +58,6 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         private val COLOR_BG = JBColor(Color(240, 240, 240), Color(60, 63, 65))
         private val COLOR_TEXT = JBColor(Color(60, 60, 60), Color(210, 210, 210))
 
-        private val QUOTA_TIERS = listOf(
-            "5-hour" to { usage: UsageResponse -> usage.fiveHour },
-            "7-day" to { usage: UsageResponse -> usage.sevenDay },
-            "7-day Sonnet" to { usage: UsageResponse -> usage.sevenDaySonnet }
-        )
     }
 
     override fun ID(): String = WIDGET_ID
@@ -101,9 +96,34 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         }
     }
 
-    private fun getSelectedQuota(usage: UsageResponse): UsageQuota? {
+    /** What the status bar renders: the bar-fill percentage (-1 when unknown) and its label. */
+    private data class StatusBarDisplay(val percentage: Int, val text: String)
+
+    private fun statusBarDisplay(usage: UsageResponse): StatusBarDisplay? {
         val tier = ClaudeUsageSettings.getInstance().state.statusBarQuotaTier
-        return usage.quotaForTier(tier)
+        if (tier == QuotaTiers.CREDITS) return creditsDisplay(usage)
+
+        val percentage = usage.utilizationForTier(tier)?.toInt() ?: return null
+        val resetIn = usage.resetsAtForTier(tier)?.let { service.formatTimeUntilReset(it) }
+        return StatusBarDisplay(
+            percentage = percentage,
+            text = if (resetIn != null) "$percentage% • $resetIn" else "$percentage%"
+        )
+    }
+
+    /** Credits show spend rather than a percentage, and have no reset countdown. */
+    private fun creditsDisplay(usage: UsageResponse): StatusBarDisplay {
+        if (!usage.creditsEnabled()) return StatusBarDisplay(-1, "Credits: off")
+        val percentage = usage.creditsUtilization()?.toInt() ?: -1
+        val spend = CreditsFormatter.compact(
+            usage.creditsUsedMajor(),
+            usage.creditsLimitMajor(),
+            usage.creditsCurrency()
+        )
+        return StatusBarDisplay(
+            percentage = percentage,
+            text = spend ?: if (percentage >= 0) "Credits: $percentage%" else "Credits: n/a"
+        )
     }
 
     inner class UsageWidgetComponent : JPanel() {
@@ -138,7 +158,7 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
 
-            val percentage = service.getUsage()?.let { getSelectedQuota(it) }?.utilization?.toInt() ?: -1
+            val percentage = service.getUsage()?.let { statusBarDisplay(it) }?.percentage ?: -1
             val fm = g2d.fontMetrics
             val text = getDisplayText()
             val rectWidth = fm.stringWidth(text) + 10
@@ -166,10 +186,8 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         }
 
         private fun getDisplayText(): String {
-            val quota = service.getUsage()?.let { getSelectedQuota(it) }
-            if (quota != null) {
-                val percent = "${quota.utilization.toInt()}%"
-                return if (quota.resetsAt != null) "$percent \u2022 ${service.formatTimeUntilReset(quota.resetsAt)}" else percent
+            service.getUsage()?.let { usage ->
+                statusBarDisplay(usage)?.let { return it.text }
             }
 
             return when (service.getError()) {
@@ -347,17 +365,21 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
                 else -> { /* no extra hint */ }
             }
         } else {
-            QUOTA_TIERS.forEach { (label, extractor) ->
-                extractor(usage)?.let { quota ->
-                    val resetIn = quota.resetsAt?.let { service.formatTimeUntilReset(it) }
-                    panel.add(createUsageRow(label, quota.utilization.toInt(), resetIn))
-                    panel.add(Box.createVerticalStrut(12))
-                }
+            usage.displayRows().forEach { row ->
+                val resetIn = row.resetsAt?.let { service.formatTimeUntilReset(it) }
+                panel.add(createUsageRow(row.label, row.percent.toInt(), resetIn))
+                panel.add(Box.createVerticalStrut(12))
             }
 
-            usage.extraUsage?.let { extra ->
-                if (extra.isEnabled && extra.utilization != null) {
-                    panel.add(createUsageRow("Extra usage", extra.utilization.toInt(), "enabled"))
+            if (usage.creditsEnabled()) {
+                val percentage = usage.creditsUtilization()?.toInt()
+                val spend = CreditsFormatter.long(
+                    usage.creditsUsedMajor(),
+                    usage.creditsLimitMajor(),
+                    usage.creditsCurrency()
+                )
+                if (percentage != null || spend != null) {
+                    panel.add(createUsageRow(QuotaTiers.CREDITS, percentage ?: 0, valueText = spend))
                     panel.add(Box.createVerticalStrut(12))
                 }
             }
@@ -370,7 +392,16 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         ShowSettingsUtil.getInstance().showSettingsDialog(project, ClaudeUsageSettingsConfigurable::class.java)
     }
 
-    private fun createUsageRow(label: String, percentage: Int, resetIn: String?): JPanel {
+    /**
+     * [valueText] overrides the right-aligned header value, which defaults to the percentage. Credits
+     * use it to show spend (`$0.00 of $1,000.00`) where a percentage would be less useful.
+     */
+    private fun createUsageRow(
+        label: String,
+        percentage: Int,
+        resetIn: String? = null,
+        valueText: String? = null
+    ): JPanel {
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             alignmentX = Component.LEFT_ALIGNMENT
@@ -382,7 +413,7 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             isOpaque = false
         }
         headerPanel.add(JBLabel(label), BorderLayout.WEST)
-        headerPanel.add(JBLabel("$percentage%"), BorderLayout.EAST)
+        headerPanel.add(JBLabel(valueText ?: "$percentage%"), BorderLayout.EAST)
 
         row.add(headerPanel)
         row.add(Box.createVerticalStrut(4))

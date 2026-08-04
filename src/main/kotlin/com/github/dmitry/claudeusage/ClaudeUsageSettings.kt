@@ -33,7 +33,7 @@ class ClaudeUsageSettings : PersistentStateComponent<ClaudeUsageSettings.State> 
     }
 
     companion object {
-        const val DEFAULT_QUOTA_TIER = "5-hour"
+        const val DEFAULT_QUOTA_TIER = QuotaTiers.FIVE_HOUR
         const val DEFAULT_YELLOW_THRESHOLD = 70
         const val DEFAULT_RED_THRESHOLD = 90
         const val DEFAULT_CREDENTIALS_PATH = "~/.claude/.credentials.json"
@@ -42,7 +42,7 @@ class ClaudeUsageSettings : PersistentStateComponent<ClaudeUsageSettings.State> 
         const val DEFAULT_NOTIFY_ON_THRESHOLD = true
         const val DEFAULT_PROXY_URL = ""
 
-        val QUOTA_TIER_OPTIONS = arrayOf("5-hour", "7-day", "7-day Sonnet")
+        val QUOTA_TIER_OPTIONS: Array<String> = QuotaTiers.ALL.toTypedArray()
 
         fun getInstance(): ClaudeUsageSettings =
             ApplicationManager.getApplication().getService(ClaudeUsageSettings::class.java)

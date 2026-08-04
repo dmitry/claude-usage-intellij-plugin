@@ -224,12 +224,12 @@ class ClaudeUsageService : Disposable {
     private fun maybeNotifyThresholdCrossing(usage: UsageResponse) {
         val settings = ClaudeUsageSettings.getInstance().state
         val tier = settings.statusBarQuotaTier
-        val current = usage.quotaForTier(tier)?.utilization
+        val current = usage.utilizationForTier(tier)
         val previous = previousUtilization.getAndSet(current)
 
         if (!settings.notifyOnThreshold || current == null || previous == null) return
 
-        val resetHint = usage.quotaForTier(tier)?.resetsAt
+        val resetHint = usage.resetsAtForTier(tier)
             ?.let { " - resets in ${formatTimeUntilReset(it)}" } ?: ""
         val percent = current.toInt()
         when {

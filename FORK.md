@@ -26,6 +26,33 @@ gap, fixed here.
 | `plugin.xml`, `gradle.properties` | Plugin id `…claudeusage.local`, name `Claude Code Usage (local build)`, version `0.3.2-local.1` | A distinct id stops the IDE matching this build against the Marketplace listing, so a future upstream release can never silently replace these fixes. Settings carry over because the `@State` storage name is unchanged. |
 | `build.gradle.kts`, `src/test/` | JUnit 5 + a test suite (upstream has none) | The redaction is exactly the kind of property that regresses silently. |
 
+## Features added
+
+**Usage credits and the model-scoped weekly limit** (matching the official `/usage` view).
+
+Upstream already fetched both and threw them away. `extra_usage.monthly_limit` / `used_credits` were
+parsed and never read, and the model named only `five_hour` / `seven_day` / `seven_day_sonnet` — so on
+a current account, where every `seven_day_*` field is null, the model-scoped weekly row ("Weekly ·
+Fable") was dropped entirely. `Json { ignoreUnknownKeys = true }` made both losses silent.
+
+| Area | Change |
+|---|---|
+| `UsageResponse.kt` | Models the API's self-describing `limits[]` and modern `spend{}` blocks. Rows render from `limits[]` when present, falling back to the named fields. An unrecognised limit `kind` is humanised, not dropped. |
+| `CreditsFormatter.kt` (new) | `$0.00 of $1,000.00` for the popup, `$0.00 / $1,000.00` for the status bar. Formats in the viewer's locale with the payload's currency swapped in. |
+| `QuotaTiers.kt` (new) | Single source of truth for tier ids, previously duplicated across three files. Adds `Weekly (model-scoped)` and `Usage credits`. |
+| `ClaudeUsageStatusBarWidget.kt` | Credits row; `createUsageRow` gained an optional `valueText` so spend can sit where the percentage normally does. |
+| `ClaudeUsageService.kt` | Threshold notifications route through `utilizationForTier`, so they cover credits too. |
+
+Two traps worth remembering, both pinned by `UsagePayloadTest` against a captured real response:
+
+- **`monthly_limit` is in minor units.** A $1,000 cap arrives as `100000` with `decimal_places: 2`.
+  Treating it as dollars renders `$100,000.00`.
+- **Currency is not USD.** The payload carries `currency` (`CAD` here). Formatting with a fixed US
+  locale renders `CA$1,000.00`; using the viewer's locale gives the `$1,000.00` the official view shows.
+
+Tier ids are persisted in `ClaudeCodeUsage.xml` as `statusBarQuotaTier`, so they are ids as well as
+labels — renaming one silently drops that user to the 5-hour tier. Only ever add.
+
 ## Not fixed (accepted, upstream-inherent)
 
 - **Undocumented endpoint + spoofed User-Agent.** The plugin calls an internal OAuth usage endpoint
