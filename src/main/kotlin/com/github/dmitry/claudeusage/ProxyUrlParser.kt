@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import java.net.URI
 

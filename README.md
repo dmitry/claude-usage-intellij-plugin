@@ -1,46 +1,56 @@
-# Claude Usage IntelliJ Plugin
+# Claude & Codex Usage IntelliJ Plugin
 
 [![JetBrains Plugin](https://img.shields.io/jetbrains/plugin/v/29946-claude-code-usage.svg)](https://plugins.jetbrains.com/plugin/29946-claude-code-usage)
 
-A simple IntelliJ plugin that displays your Claude subscription usage in the IDE status bar.
+A simple IntelliJ plugin that displays Claude and Codex subscription usage in separate IDE status-bar widgets.
 
-> **Note:** This plugin shows Claude subscription usage limits only (5-hour, 7-day quotas). It does not track API token usage, costs, or conversation history.
+> **Note:** This plugin shows subscription quota windows. It does not track API-key billing, costs, or conversation history.
 
 ![Status Bar Widget](preview/status.png)
 
 ## Features
 
-- Real-time usage percentage in the status bar with automatic refresh every minute (configurable)
-- Manual refresh button in the popup for instant updates
+- Separate Claude and Codex status-bar progress indicators, each with its own popup and refresh button
+- Bundled Claude and Codex favicons instead of provider-name text in the compact indicators
+- Real-time usage percentages with automatic refresh every minute (configurable)
 - Color-coded progress indicator (green → yellow → red)
 - Time until quota reset
-- Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, extra usage)
+- Claude popup with all reported usage tiers and credit spend
+- Codex popup with every quota bucket and window reported by the installed CLI
 - Dark and light theme support
 - Error state display with actionable hints (missing credentials, auth expired, network/proxy issues)
 - Last fetch timestamp in the popup
 - Works behind a corporate proxy (auto-detected, see [Proxy support](#proxy-support))
-- Configurable settings (Settings → Tools → Claude Code Usage):
+- Configurable settings (Settings → Tools → Claude & Codex Usage):
+  - Independently enable the Claude and Codex widgets
+  - Optional Codex executable path (empty auto-detects `codex` and shows the resolved path)
   - Status bar quota display (5-hour, 7-day, or 7-day Sonnet)
   - Auto-refresh interval (1–60 minutes, default 1)
   - Warning color thresholds (yellow/red)
   - Custom credentials file path
   - Proxy URL override
   - Reset to defaults button
-- Direct link to Claude settings
 
 ![Popup Details](preview/details.png)
 
 ## Requirements
 
 - IntelliJ IDEA 2024.1+ (works with all JetBrains IDEs: WebStorm, PyCharm, RubyMine, etc.)
-- Claude Code CLI installed and authenticated
+- Claude Code CLI installed and authenticated when the Claude widget is enabled
+- Codex CLI installed and signed in with ChatGPT when the Codex widget is enabled
 
 The plugin reads credentials from:
 
 - **macOS:** the system Keychain entry `Claude Code-credentials` (where Claude Code CLI now stores them by default). On first run, macOS will show a one-time access dialog — click **Always Allow** for your IDE so the plugin can read the entry without further prompts. Falls back to `~/.claude/.credentials.json` if the keychain entry is missing.
 - **Linux / Windows:** `~/.claude/.credentials.json` (created when you sign in to Claude Code CLI).
 
-The credentials path and the macOS Keychain toggle are both configurable in **Settings -> Tools -> Claude Code Usage**.
+The credentials path and the macOS Keychain toggle are both configurable in **Settings -> Tools -> Claude & Codex Usage**.
+
+For Codex, the plugin starts the installed CLI's local `app-server`, requests `account/rateLimits/read`, then closes the process. Authentication and token refresh remain owned by Codex; this plugin does not read or store `~/.codex/auth.json`. See the [official Codex app-server documentation](https://learn.chatgpt.com/docs/app-server).
+
+JetBrains IDEs launched from Finder, the Dock, or a desktop menu can inherit a much smaller `PATH` than your terminal. The plugin repairs the child process `PATH` automatically using the detected Codex executable directory, its resolved symlink directory, common CLI install directories, and the IDE's existing `PATH`. This lets npm/Homebrew and version-manager launchers find their adjacent Node.js runtime without requiring the IDE itself to inherit your shell setup. Settings shows the executable that was detected; use the Codex executable field only when auto-detection cannot find your installation.
+
+Codex launch errors are read from a bounded stderr buffer and converted to fixed, non-secret guidance for a missing runtime, an outdated CLI, authentication, timeout, and general request failures. Raw stderr is never displayed in the widget.
 
 > **Note (SSH):** the macOS Keychain is locked over SSH — same limitation as the official CLI. Either run `security unlock-keychain` first or fall back to the file path.
 
@@ -48,7 +58,7 @@ The credentials path and the macOS Keychain toggle are both configurable in **Se
 
 The plugin makes a single HTTPS request to `api.anthropic.com`. Behind a corporate proxy it picks up the proxy automatically, in this order:
 
-1. **Proxy URL** in **Settings → Tools → Claude Code Usage** (manual override)
+1. **Proxy URL** in **Settings → Tools → Claude & Codex Usage** (manual override)
 2. `HTTPS_PROXY` / `HTTP_PROXY` in the `env` block of `~/.claude/settings.json` — the same block the Claude Code CLI reads:
    ```json
    { "env": { "HTTPS_PROXY": "http://proxy.corp:3128" } }
@@ -116,7 +126,7 @@ Or install directly: [JetBrains Marketplace](https://plugins.jetbrains.com/plugi
 
 ## Usage
 
-Once installed, you'll see your usage in the status bar (bottom right). Click to see detailed breakdown of all quota tiers.
+Once installed, enable the provider widgets you use under **Settings → Tools → Claude & Codex Usage**. Each status-bar indicator opens its own quota popup.
 
 ## Roadmap / Feature Ideas
 

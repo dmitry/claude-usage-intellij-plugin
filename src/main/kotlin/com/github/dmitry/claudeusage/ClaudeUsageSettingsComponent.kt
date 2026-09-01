@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.JBColor
@@ -8,10 +8,24 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.FormBuilder
 import java.awt.FlowLayout
 import javax.swing.*
+import javax.swing.event.DocumentEvent
+import javax.swing.event.DocumentListener
 
-class ClaudeUsageSettingsComponent {
+class ClaudeUsageSettingsComponent(
+    private val resolveCodexExecutable: (String) -> String? = { configuredPath ->
+        CodexCliResolver.resolve(configuredPath)
+    }
+) {
 
     private val mainPanel: JPanel
+    private val showClaudeWidgetCheckBox = JBCheckBox("Show Claude usage widget")
+    private val showCodexWidgetCheckBox = JBCheckBox("Show Codex usage widget")
+    private val codexExecutablePathField = JBTextField().apply {
+        toolTipText = "Leave empty to auto-detect Codex and repair the CLI launch PATH for the IDE"
+    }
+    private val codexExecutableStatusLabel = JBLabel().apply {
+        foreground = JBColor.GRAY
+    }
     private val quotaTierComboBox = JComboBox(ClaudeUsageSettings.QUOTA_TIER_OPTIONS)
     private val yellowThresholdField = JSpinner(SpinnerNumberModel(70, 0, 100, 1))
     private val redThresholdField = JSpinner(SpinnerNumberModel(90, 0, 100, 1))
@@ -27,6 +41,10 @@ class ClaudeUsageSettingsComponent {
     }
     private val notifyOnThresholdCheckBox = JBCheckBox("Show IDE notification when usage crosses a warning threshold").apply {
         toolTipText = "Pops up a balloon when the status bar quota crosses the yellow or red threshold"
+    }
+    private val soundOnCreditsSwitchCheckBox = JBCheckBox("Play a sound when usage switches to or from credit spend").apply {
+        toolTipText = "A low chime when the status bar quota hits its limit and starts billing to credits, " +
+            "and a brighter one when it resets and included usage is available again"
     }
     private val proxyUrlField = JBTextField().apply {
         toolTipText = "e.g. http://user:pass@proxyhost:3128 or socks5://proxyhost:1080. " +
@@ -48,6 +66,13 @@ class ClaudeUsageSettingsComponent {
         }
 
         mainPanel = FormBuilder.createFormBuilder()
+            .addComponent(JBLabel("Usage widgets"))
+            .addComponent(showClaudeWidgetCheckBox)
+            .addComponent(showCodexWidgetCheckBox)
+            .addLabeledComponent(JBLabel("Codex executable (empty = auto-detect):"), codexExecutablePathField, 1, false)
+            .addComponent(codexExecutableStatusLabel)
+            .addSeparator()
+            .addComponent(JBLabel("Claude"))
             .addLabeledComponent(JBLabel("Status bar quota display:"), quotaTierComboBox, 1, false)
             .addLabeledComponent(JBLabel("Yellow warning threshold (%):"), yellowThresholdField, 1, false)
             .addLabeledComponent(JBLabel("Red warning threshold (%):"), redThresholdField, 1, false)
@@ -55,6 +80,7 @@ class ClaudeUsageSettingsComponent {
             .addLabeledComponent(JBLabel("Refresh interval (minutes):"), refreshIntervalField, 1, false)
             .addComponent(useMacKeychainCheckBox)
             .addComponent(notifyOnThresholdCheckBox)
+            .addComponent(soundOnCreditsSwitchCheckBox)
             .addLabeledComponent(JBLabel("Proxy URL (empty = auto-detect, 'none' = direct):"), proxyUrlField, 1, false)
             .addComponent(proxyDetectedLabel)
             .addComponent(proxyCredentialsLabel)
@@ -67,6 +93,13 @@ class ClaudeUsageSettingsComponent {
             resetToDefaults()
         }
 
+        codexExecutablePathField.document.addDocumentListener(object : DocumentListener {
+            override fun insertUpdate(event: DocumentEvent) = refreshCodexExecutableStatus()
+            override fun removeUpdate(event: DocumentEvent) = refreshCodexExecutableStatus()
+            override fun changedUpdate(event: DocumentEvent) = refreshCodexExecutableStatus()
+        })
+
+        refreshCodexExecutableStatus()
         refreshProxyDetectedLabel()
     }
 
@@ -75,6 +108,14 @@ class ClaudeUsageSettingsComponent {
     fun getPreferredFocusedComponent(): JComponent = quotaTierComboBox
 
     fun getQuotaTier(): String = quotaTierComboBox.selectedItem as String
+
+    fun getShowClaudeWidget(): Boolean = showClaudeWidgetCheckBox.isSelected
+
+    fun getShowCodexWidget(): Boolean = showCodexWidgetCheckBox.isSelected
+
+    fun getCodexExecutablePath(): String = codexExecutablePathField.text
+
+    fun getCodexExecutableStatus(): String = codexExecutableStatusLabel.text
 
     fun getYellowThreshold(): Int = yellowThresholdField.value as Int
 
@@ -88,10 +129,24 @@ class ClaudeUsageSettingsComponent {
 
     fun getNotifyOnThreshold(): Boolean = notifyOnThresholdCheckBox.isSelected
 
+    fun getSoundOnCreditsSwitch(): Boolean = soundOnCreditsSwitchCheckBox.isSelected
+
     fun getProxyUrl(): String = proxyUrlField.text
 
     fun setQuotaTier(tier: String) {
         quotaTierComboBox.selectedItem = tier
+    }
+
+    fun setShowClaudeWidget(value: Boolean) {
+        showClaudeWidgetCheckBox.isSelected = value
+    }
+
+    fun setShowCodexWidget(value: Boolean) {
+        showCodexWidgetCheckBox.isSelected = value
+    }
+
+    fun setCodexExecutablePath(value: String) {
+        codexExecutablePathField.text = value
     }
 
     fun setYellowThreshold(value: Int) {
@@ -118,6 +173,10 @@ class ClaudeUsageSettingsComponent {
         notifyOnThresholdCheckBox.isSelected = value
     }
 
+    fun setSoundOnCreditsSwitch(value: Boolean) {
+        soundOnCreditsSwitchCheckBox.isSelected = value
+    }
+
     fun setProxyUrl(value: String) {
         proxyUrlField.text = value
     }
@@ -132,7 +191,21 @@ class ClaudeUsageSettingsComponent {
         }
     }
 
+    private fun refreshCodexExecutableStatus() {
+        val configuredPath = getCodexExecutablePath().trim()
+        val resolved = runCatching { resolveCodexExecutable(configuredPath) }.getOrNull()
+        codexExecutableStatusLabel.text = when {
+            resolved != null && configuredPath.isEmpty() -> "Auto-detected: $resolved"
+            resolved != null -> "Configured: $resolved"
+            configuredPath.isEmpty() -> "Codex CLI was not found in PATH or a common install directory"
+            else -> "Configured Codex executable was not found or is not executable"
+        }
+    }
+
     private fun resetToDefaults() {
+        setShowClaudeWidget(ClaudeUsageSettings.DEFAULT_SHOW_CLAUDE_WIDGET)
+        setShowCodexWidget(ClaudeUsageSettings.DEFAULT_SHOW_CODEX_WIDGET)
+        setCodexExecutablePath(ClaudeUsageSettings.DEFAULT_CODEX_EXECUTABLE_PATH)
         setQuotaTier(ClaudeUsageSettings.DEFAULT_QUOTA_TIER)
         setYellowThreshold(ClaudeUsageSettings.DEFAULT_YELLOW_THRESHOLD)
         setRedThreshold(ClaudeUsageSettings.DEFAULT_RED_THRESHOLD)
@@ -140,6 +213,7 @@ class ClaudeUsageSettingsComponent {
         setRefreshIntervalMinutes(ClaudeUsageSettings.DEFAULT_REFRESH_INTERVAL_MINUTES)
         setUseMacKeychain(ClaudeUsageSettings.DEFAULT_USE_MAC_KEYCHAIN)
         setNotifyOnThreshold(ClaudeUsageSettings.DEFAULT_NOTIFY_ON_THRESHOLD)
+        setSoundOnCreditsSwitch(ClaudeUsageSettings.DEFAULT_SOUND_ON_CREDITS_SWITCH)
         setProxyUrl(ClaudeUsageSettings.DEFAULT_PROXY_URL)
     }
 }

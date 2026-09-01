@@ -1,36 +1,47 @@
 <idea-plugin>
-    <!-- Deliberately NOT the upstream id (com.github.dmitry.claudeusage): a distinct id keeps the
+    <!-- Deliberately NOT the upstream id (com.github.h2a.claudeusage): a distinct id keeps the
          IDE from matching this build against the Marketplace listing and offering/applying an
          update that would silently replace the local security fixes. -->
-    <id>com.github.dmitry.claudeusage.local</id>
-    <name>Claude Code Usage (local build)</name>
-    <vendor url="https://github.com/dmitry/claude-usage-intellij-plugin">Dmitry Polushkin (locally patched fork)</vendor>
+    <id>com.github.h2a.claudeusage.local</id>
+    <name>Claude &amp; Codex Usage (local build)</name>
+    <vendor url="https://github.com/h2a/claude-usage-intellij-plugin">h2a Polushkin (locally patched fork)</vendor>
 
     <description><![CDATA[
-    Displays your Claude subscription usage limits in the IDE status bar.
+    Displays your Claude and Codex subscription usage limits in separate IDE status-bar widgets.
     <br><br>
     <b>Note:</b> This plugin tracks subscription quota usage only (5-hour, 7-day limits).
     It does not track API tokens, costs, or conversation history.
     <br><br>
     <b>Features:</b>
     <ul>
+        <li>Separate Claude and Codex progress widgets with independent detail popups</li>
+        <li>Bundled provider favicons keep both status indicators compact and recognizable</li>
         <li>Real-time usage percentage with auto-refresh every minute (configurable)</li>
         <li>Reads credentials from the macOS Keychain (where Claude Code stores them) with fallback to the credentials file</li>
         <li>Manual refresh button for instant updates</li>
         <li>Color-coded progress indicator (green → yellow → red)</li>
+        <li>Once the displayed window hits 100%, the indicator switches to the credit spend now accruing ($20.74 of $1,000.00) on its own amber → red scale, and switches back when usage drops below the limit</li>
+        <li>Optional chime on each switch — a low note when credit spend starts, a brighter one when the window resets — so you know without watching the status bar</li>
         <li>Time until quota reset</li>
-        <li>Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, extra usage)</li>
-        <li>Configurable settings (Settings → Tools → Claude Code Usage)</li>
+        <li>Detailed popup with all usage tiers (5-hour, weekly all-models, weekly model-scoped, usage credits)</li>
+        <li>Configurable settings (Settings → Tools → Claude &amp; Codex Usage)</li>
         <li>Works behind corporate proxies: auto-detects HTTPS_PROXY/HTTP_PROXY from ~/.claude/settings.json or the environment, with an option to override</li>
         <li>Dark and light theme support</li>
         <li>Error state display with actionable hints</li>
-        <li>Direct link to Claude settings</li>
     </ul>
     <br>
-    <b>Requirements:</b> Claude Code CLI installed and authenticated (~/.claude/.credentials.json)
+    <b>Requirements:</b> Enable the provider widgets you use. Claude requires an authenticated Claude Code CLI;
+    Codex requires an installed and authenticated Codex CLI.
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>0.3.2-local.5</b>
+    <ul>
+        <li>Added a separate Codex status-bar progress widget and independent Codex usage popup</li>
+        <li>Codex usage comes from the installed CLI's local app-server protocol; the plugin does not read or store Codex tokens</li>
+        <li>Added bundled Claude and Codex favicons to the two compact status indicators</li>
+        <li>Added independent Claude/Codex widget toggles and an optional Codex executable path</li>
+    </ul>
     <b>0.3.2</b>
     <ul>
         <li>Proxy support for the usage API request: auto-detects HTTPS_PROXY/HTTP_PROXY from ~/.claude/settings.json (falling back to the environment variables), with a new "Proxy URL" setting to override it manually (supports http://user:pass@host:port)</li>
@@ -90,14 +101,19 @@
     <extensions defaultExtensionNs="com.intellij">
         <statusBarWidgetFactory
                 id="ClaudeUsageWidget"
-                implementation="com.github.dmitry.claudeusage.ClaudeUsageStatusBarWidgetFactory"
+                implementation="com.github.h2a.claudeusage.ClaudeUsageStatusBarWidgetFactory"
                 order="after positionWidget"/>
+
+        <statusBarWidgetFactory
+                id="CodexUsageWidget"
+                implementation="com.github.h2a.claudeusage.CodexUsageStatusBarWidgetFactory"
+                order="after ClaudeUsageWidget"/>
 
         <applicationConfigurable
                 parentId="tools"
-                instance="com.github.dmitry.claudeusage.ClaudeUsageSettingsConfigurable"
-                id="com.github.dmitry.claudeusage.ClaudeUsageSettingsConfigurable"
-                displayName="Claude Code Usage"/>
+                instance="com.github.h2a.claudeusage.ClaudeUsageSettingsConfigurable"
+                id="com.github.h2a.claudeusage.ClaudeUsageSettingsConfigurable"
+                displayName="Claude &amp; Codex Usage"/>
 
         <notificationGroup
                 id="Claude Code Usage"

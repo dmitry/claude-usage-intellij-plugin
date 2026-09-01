@@ -1,7 +1,6 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import com.intellij.icons.AllIcons
-import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
@@ -21,16 +20,15 @@ import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.geom.RoundRectangle2D
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import javax.swing.*
 
 class ClaudeUsageStatusBarWidgetFactory : StatusBarWidgetFactory {
-    override fun getId(): String = "ClaudeUsageWidget"
+    override fun getId(): String = WIDGET_ID
 
     override fun getDisplayName(): String = "Claude Code Usage"
 
-    override fun isAvailable(project: Project): Boolean = true
+    override fun isAvailable(project: Project): Boolean =
+        ClaudeUsageSettings.getInstance().state.showClaudeWidget
 
     override fun createWidget(project: Project): StatusBarWidget = ClaudeUsageStatusBarWidget(project)
 
@@ -39,6 +37,10 @@ class ClaudeUsageStatusBarWidgetFactory : StatusBarWidgetFactory {
     }
 
     override fun canBeEnabledOn(statusBar: StatusBar): Boolean = true
+
+    companion object {
+        const val WIDGET_ID = "ClaudeUsageWidget"
+    }
 }
 
 class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBarWidget {
@@ -48,9 +50,6 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
     private var listener: (() -> Unit)? = null
 
     companion object {
-        private const val WIDGET_ID = "ClaudeUsageWidget"
-        private const val USAGE_URL = "https://claude.ai/settings/usage"
-
         private val COLOR_GREEN = JBColor(Color(144, 238, 144), Color(60, 140, 60))
         private val COLOR_YELLOW = JBColor(Color(255, 245, 157), Color(180, 160, 50))
         private val COLOR_RED = JBColor(Color(255, 182, 182), Color(180, 70, 70))
@@ -58,9 +57,13 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         private val COLOR_BG = JBColor(Color(240, 240, 240), Color(60, 63, 65))
         private val COLOR_TEXT = JBColor(Color(60, 60, 60), Color(210, 210, 210))
 
+        // The credits scale: distinct from the quota green/yellow/red so spending real money never
+        // reads as healthy headroom.
+        private val COLOR_AMBER = JBColor(Color(255, 224, 178), Color(190, 130, 40))
+        private val COLOR_ORANGE = JBColor(Color(255, 198, 145), Color(205, 100, 35))
     }
 
-    override fun ID(): String = WIDGET_ID
+    override fun ID(): String = ClaudeUsageStatusBarWidgetFactory.WIDGET_ID
 
     override fun getComponent(): JComponent = widgetComponent
 
@@ -68,7 +71,7 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         this.statusBar = statusBar
         listener = {
             widgetComponent.updateUsage()
-            statusBar.updateWidget(WIDGET_ID)
+            statusBar.updateWidget(ClaudeUsageStatusBarWidgetFactory.WIDGET_ID)
         }
         service.addListener(listener!!)
         widgetComponent.addMouseListener(object : MouseAdapter() {
@@ -96,8 +99,34 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         }
     }
 
+    /**
+     * Credits never read as the healthy green of an included quota - this is real money - and deepen
+     * to red as the monthly cap approaches. Reuses the configured thresholds rather than adding
+     * settings of their own.
+     */
+    private fun getCreditsColor(percentage: Int): Color {
+        val settings = ClaudeUsageSettings.getInstance().state
+        return when {
+            percentage > settings.redThreshold -> COLOR_RED
+            percentage > settings.yellowThreshold -> COLOR_ORANGE
+            else -> COLOR_AMBER
+        }
+    }
+
+    /** Which palette the pill's fill uses: an included quota, or real money spent. */
+    private enum class BarScale { USAGE, CREDITS }
+
     /** What the status bar renders: the bar-fill percentage (-1 when unknown) and its label. */
-    private data class StatusBarDisplay(val percentage: Int, val text: String)
+    private data class StatusBarDisplay(
+        val percentage: Int,
+        val text: String,
+        val scale: BarScale = BarScale.USAGE
+    )
+
+    private fun barColor(display: StatusBarDisplay): Color = when (display.scale) {
+        BarScale.USAGE -> getUsageColor(display.percentage)
+        BarScale.CREDITS -> getCreditsColor(display.percentage)
+    }
 
     private fun statusBarDisplay(usage: UsageResponse): StatusBarDisplay? {
         val tier = ClaudeUsageSettings.getInstance().state.statusBarQuotaTier
@@ -105,9 +134,32 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
 
         val percentage = usage.utilizationForTier(tier)?.toInt() ?: return null
         val resetIn = usage.resetsAtForTier(tier)?.let { service.formatTimeUntilReset(it) }
+
+        if (usage.creditsOverflowFor(tier)) {
+            creditsOverflowDisplay(usage, resetIn)?.let { return it }
+        }
+
         return StatusBarDisplay(
             percentage = percentage,
             text = if (resetIn != null) "$percentage% • $resetIn" else "$percentage%"
+        )
+    }
+
+    /**
+     * Spend accruing past a maxed window, keeping that window's countdown so it stays clear when the
+     * overflow ends. Null when the payload carries no spend figures - the caller then falls back to
+     * the exhausted percentage, since an invented `$0.00` would be worse than an honest 100%.
+     */
+    private fun creditsOverflowDisplay(usage: UsageResponse, resetIn: String?): StatusBarDisplay? {
+        val spend = CreditsFormatter.long(
+            usage.creditsUsedMajor(),
+            usage.creditsLimitMajor(),
+            usage.creditsCurrency()
+        ) ?: return null
+        return StatusBarDisplay(
+            percentage = usage.creditsUtilization()?.toInt() ?: 0,
+            text = if (resetIn != null) "$spend • $resetIn" else spend,
+            scale = BarScale.CREDITS
         )
     }
 
@@ -122,17 +174,20 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         )
         return StatusBarDisplay(
             percentage = percentage,
-            text = spend ?: if (percentage >= 0) "Credits: $percentage%" else "Credits: n/a"
+            text = spend ?: if (percentage >= 0) "Credits: $percentage%" else "Credits: n/a",
+            scale = BarScale.CREDITS
         )
     }
 
     inner class UsageWidgetComponent : JPanel() {
-        private val minWidth = 100
+        private val minWidth = 80
+        private val providerIcon = UsageProviderIcons.CLAUDE
 
         init {
             isOpaque = false
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             toolTipText = "Click to see Claude Code usage details"
+            getAccessibleContext().accessibleName = "Claude usage"
         }
 
         fun updateUsage() {
@@ -142,8 +197,15 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
 
         private fun calculateSize(): Dimension {
             val fm = getFontMetrics(font)
-            val text = getDisplayText()
-            return Dimension(maxOf(fm.stringWidth(text) + 16, minWidth), fm.height + 6)
+            val text = currentDisplay().text
+            val layout = StatusBarPillLayout.calculate(
+                fm.stringWidth(text),
+                fm.height,
+                providerIcon.iconWidth,
+                providerIcon.iconHeight,
+                minWidth
+            )
+            return Dimension(layout.componentWidth, layout.componentHeight)
         }
 
         override fun getPreferredSize(): Dimension = calculateSize()
@@ -158,11 +220,19 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
 
-            val percentage = service.getUsage()?.let { statusBarDisplay(it) }?.percentage ?: -1
+            val display = currentDisplay()
+            val percentage = display.percentage
             val fm = g2d.fontMetrics
-            val text = getDisplayText()
-            val rectWidth = fm.stringWidth(text) + 10
-            val rectHeight = fm.height + 4
+            val text = display.text
+            val layout = StatusBarPillLayout.calculate(
+                fm.stringWidth(text),
+                fm.height,
+                providerIcon.iconWidth,
+                providerIcon.iconHeight,
+                minWidth
+            )
+            val rectWidth = layout.pillWidth
+            val rectHeight = layout.pillHeight
             val x = (width - rectWidth) / 2
             val y = (height - rectHeight) / 2
             val rect = RoundRectangle2D.Float(x.toFloat(), y.toFloat(), rectWidth.toFloat(), rectHeight.toFloat(), 6f, 6f)
@@ -171,7 +241,7 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             g2d.fill(rect)
 
             if (percentage >= 0) {
-                g2d.color = getUsageColor(percentage)
+                g2d.color = barColor(display)
                 g2d.clip = rect
                 g2d.fillRect(x, y, (rectWidth * percentage / 100f).coerceAtLeast(6f).toInt(), rectHeight)
                 g2d.clip = null
@@ -181,27 +251,40 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             }
 
             g2d.color = COLOR_TEXT
-            g2d.drawString(text, x + 5, y + fm.ascent + 2)
+            providerIcon.paintIcon(
+                this,
+                g2d,
+                x + 5,
+                y + (rectHeight - providerIcon.iconHeight) / 2
+            )
+            g2d.drawString(
+                text,
+                x + 5 + providerIcon.iconWidth + 4,
+                y + (rectHeight - fm.height) / 2 + fm.ascent
+            )
             g2d.dispose()
         }
 
-        private fun getDisplayText(): String {
-            service.getUsage()?.let { usage ->
-                statusBarDisplay(usage)?.let { return it.text }
-            }
+        /**
+         * The whole render model, resolved once per paint: tier lookup, countdown formatting and
+         * currency formatting all happen here, and both width formulas read the same string.
+         */
+        private fun currentDisplay(): StatusBarDisplay =
+            service.getUsage()?.let { statusBarDisplay(it) } ?: StatusBarDisplay(-1, errorText())
 
+        private fun errorText(): String {
             return when (service.getError()) {
-                UsageErrorState.NO_CREDENTIALS -> "Claude: no creds"
-                UsageErrorState.AUTH_FAILED -> "Claude: auth err"
-                UsageErrorState.NETWORK_ERROR -> "Claude: offline"
-                UsageErrorState.PROXY_ERROR -> "Claude: proxy err"
-                UsageErrorState.RATE_LIMITED -> "Claude: rate limited"
-                UsageErrorState.HTTP_ERROR, UsageErrorState.PARSE_ERROR -> "Claude: error"
-                UsageErrorState.NO_ACCESS_TOKEN -> "Claude: no token"
-                UsageErrorState.KEYCHAIN_DENIED -> "Claude: keychain denied"
-                UsageErrorState.KEYCHAIN_TIMEOUT -> "Claude: keychain timeout"
-                UsageErrorState.KEYCHAIN_ERROR -> "Claude: keychain err"
-                UsageErrorState.NONE -> "Claude: loading..."
+                UsageErrorState.NO_CREDENTIALS -> "no creds"
+                UsageErrorState.AUTH_FAILED -> "auth err"
+                UsageErrorState.NETWORK_ERROR -> "offline"
+                UsageErrorState.PROXY_ERROR -> "proxy err"
+                UsageErrorState.RATE_LIMITED -> "rate limited"
+                UsageErrorState.HTTP_ERROR, UsageErrorState.PARSE_ERROR -> "error"
+                UsageErrorState.NO_ACCESS_TOKEN -> "no token"
+                UsageErrorState.KEYCHAIN_DENIED -> "keychain denied"
+                UsageErrorState.KEYCHAIN_TIMEOUT -> "keychain timeout"
+                UsageErrorState.KEYCHAIN_ERROR -> "keychain err"
+                UsageErrorState.NONE -> "loading..."
             }
         }
     }
@@ -221,11 +304,6 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             isOpaque = false
         }
 
-        val lastFetchLabel = JBLabel().apply {
-            font = font.deriveFont(font.size - 1f)
-            foreground = UIUtil.getContextHelpForeground()
-        }
-
         val refreshButton = JButton(AllIcons.Actions.Refresh).apply {
             isBorderPainted = false
             isContentAreaFilled = false
@@ -242,12 +320,10 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         }
 
         val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply { isOpaque = false }
-        rightPanel.add(lastFetchLabel)
         rightPanel.add(settingsButton)
         rightPanel.add(refreshButton)
 
         val bottomPanel = JPanel(BorderLayout()).apply { isOpaque = false }
-        bottomPanel.add(createLinkLabel(), BorderLayout.WEST)
         bottomPanel.add(rightPanel, BorderLayout.EAST)
 
         root.add(body, BorderLayout.CENTER)
@@ -256,9 +332,6 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         lateinit var popup: JBPopup
 
         fun updateControls() {
-            lastFetchLabel.text = service.getLastFetchTime()?.let {
-                DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault()).format(it)
-            } ?: ""
             if (service.canRefresh()) {
                 refreshButton.isEnabled = true
                 refreshButton.toolTipText = "Refresh usage data"
@@ -379,7 +452,14 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
                     usage.creditsCurrency()
                 )
                 if (percentage != null || spend != null) {
-                    panel.add(createUsageRow(QuotaTiers.CREDITS, percentage ?: 0, valueText = spend))
+                    panel.add(
+                        createUsageRow(
+                            QuotaTiers.CREDITS,
+                            percentage ?: 0,
+                            valueText = spend,
+                            barColor = getCreditsColor(percentage ?: 0)
+                        )
+                    )
                     panel.add(Box.createVerticalStrut(12))
                 }
             }
@@ -395,12 +475,16 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
     /**
      * [valueText] overrides the right-aligned header value, which defaults to the percentage. Credits
      * use it to show spend (`$0.00 of $1,000.00`) where a percentage would be less useful.
+     *
+     * [barColor] overrides the quota palette, so the credits row tells the same colour story as the
+     * status bar pill does while a maxed window is billing to credits.
      */
     private fun createUsageRow(
         label: String,
         percentage: Int,
         resetIn: String? = null,
-        valueText: String? = null
+        valueText: String? = null,
+        barColor: Color? = null
     ): JPanel {
         val row = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
@@ -423,7 +507,7 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             preferredSize = Dimension(200, 8)
             maximumSize = Dimension(200, 8)
             alignmentX = Component.LEFT_ALIGNMENT
-            foreground = getUsageColor(percentage)
+            foreground = barColor ?: getUsageColor(percentage)
         })
         if (resetIn != null) {
             row.add(Box.createVerticalStrut(2))
@@ -438,17 +522,6 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
             font = font.deriveFont(font.size - 1f)
             foreground = UIUtil.getContextHelpForeground()
             alignmentX = Component.LEFT_ALIGNMENT
-        }
-    }
-
-    private fun createLinkLabel(): JBLabel {
-        return JBLabel("<html><a href=''>View on claude.ai</a></html>").apply {
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent?) {
-                    BrowserUtil.browse(USAGE_URL)
-                }
-            })
         }
     }
 }

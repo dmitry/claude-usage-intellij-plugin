@@ -1,8 +1,10 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.math.pow
+
+private const val FULL_UTILIZATION = 100.0
 
 @Serializable
 data class UsageResponse(
@@ -78,6 +80,18 @@ data class UsageResponse(
 
     fun creditsUtilization(): Double? =
         if (!creditsEnabled()) null else spend?.percent ?: extraUsage?.utilizationOrDerived()
+
+    /**
+     * True when [tier] has no headroom left and credits are on - the point at which further work
+     * bills to credit spend, so the status bar shows that spend instead of a percentage pinned at
+     * 100 that can no longer move.
+     *
+     * The credits tier cannot overflow into itself, so it answers false regardless of spend.
+     */
+    fun creditsOverflowFor(tier: String): Boolean =
+        tier != QuotaTiers.CREDITS &&
+            creditsEnabled() &&
+            (utilizationForTier(tier) ?: 0.0) >= FULL_UTILIZATION
 }
 
 /** One rendered row: a label, a percentage, and an optional reset timestamp. */

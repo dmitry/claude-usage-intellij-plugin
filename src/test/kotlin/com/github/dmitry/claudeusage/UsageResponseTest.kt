@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,10 +14,14 @@ class UsageResponseTest {
     private val sevenDaySonnet = UsageQuota(utilization = 8.0, resetsAt = "2026-08-07T22:58:00+00:00")
 
     /** A modern payload: self-describing limits plus a `spend` block, no named quota fields. */
-    private fun modern() = UsageResponse(
+    private fun modern(
+        sessionPercent: Double = 29.0,
+        weeklyPercent: Double = 16.0,
+        creditsEnabled: Boolean = true
+    ) = UsageResponse(
         limits = listOf(
-            UsageLimit(kind = LimitKinds.SESSION, percent = 29.0, resetsAt = "2026-08-05T00:49:59+00:00"),
-            UsageLimit(kind = LimitKinds.WEEKLY_ALL, percent = 16.0, resetsAt = "2026-08-07T22:59:59+00:00"),
+            UsageLimit(kind = LimitKinds.SESSION, percent = sessionPercent, resetsAt = "2026-08-05T00:49:59+00:00"),
+            UsageLimit(kind = LimitKinds.WEEKLY_ALL, percent = weeklyPercent, resetsAt = "2026-08-07T22:59:59+00:00"),
             UsageLimit(
                 kind = LimitKinds.WEEKLY_SCOPED,
                 percent = 8.0,
@@ -29,7 +33,7 @@ class UsageResponseTest {
             used = Money(amountMinor = 0, currency = "CAD", exponent = 2),
             limit = Money(amountMinor = 100000, currency = "CAD", exponent = 2),
             percent = 0.0,
-            enabled = true
+            enabled = creditsEnabled
         )
     )
 
@@ -186,5 +190,56 @@ class UsageResponseTest {
         val unresolved = QuotaTiers.ALL.filter { usage.utilizationForTier(it) == null }
 
         assertEquals(listOf(QuotaTiers.SEVEN_DAY_SONNET), unresolved, "only the legacy Sonnet tier may be empty")
+    }
+
+    @Test
+    fun `credits overflow starts exactly at the limit, not before`() {
+        // The status bar swaps a pinned 100% for the spend it is now accruing, so the boundary is
+        // the whole feature: one percent early and it hides a quota that still has headroom.
+        assertFalse(modern(sessionPercent = 99.0).creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+        assertTrue(modern(sessionPercent = 100.0).creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+        assertTrue(modern(sessionPercent = 104.0).creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+    }
+
+    @Test
+    fun `a maxed window does not overflow when credits are off`() {
+        // With credits disabled there is no spend to show, so the pill must keep showing 100%.
+        val usage = modern(sessionPercent = 100.0, creditsEnabled = false)
+
+        assertFalse(usage.creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+    }
+
+    @Test
+    fun `overflow is judged per tier, so only the displayed window flips the pill`() {
+        val usage = modern(sessionPercent = 29.0, weeklyPercent = 100.0)
+
+        assertTrue(usage.creditsOverflowFor(QuotaTiers.SEVEN_DAY))
+        assertFalse(usage.creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+    }
+
+    @Test
+    fun `the credits tier never overflows into itself`() {
+        // Credits already show spend; swapping them for spend would be a no-op with a wrong label.
+        val usage = modern(sessionPercent = 100.0)
+
+        assertFalse(usage.creditsOverflowFor(QuotaTiers.CREDITS))
+    }
+
+    @Test
+    fun `overflow resolves on a legacy payload too`() {
+        val usage = UsageResponse(
+            fiveHour = UsageQuota(utilization = 100.0, resetsAt = "2026-08-05T00:49:59+00:00"),
+            extraUsage = ExtraUsage(isEnabled = true, monthlyLimit = 100000.0, usedCredits = 2074.0, decimalPlaces = 2)
+        )
+
+        assertTrue(usage.creditsOverflowFor(QuotaTiers.FIVE_HOUR))
+        assertEquals(20.74, usage.creditsUsedMajor())
+    }
+
+    @Test
+    fun `an unresolved tier does not overflow`() {
+        // utilizationForTier is null for the legacy Sonnet tier on a modern payload; treating that
+        // absence as 100% would show spend for a window nothing reported.
+        assertFalse(modern().creditsOverflowFor(QuotaTiers.SEVEN_DAY_SONNET))
     }
 }

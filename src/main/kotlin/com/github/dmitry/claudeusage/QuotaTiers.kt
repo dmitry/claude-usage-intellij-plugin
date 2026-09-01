@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 /**
  * The single source of truth for status-bar tier ids.

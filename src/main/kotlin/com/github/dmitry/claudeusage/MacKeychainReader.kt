@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import com.intellij.openapi.diagnostic.Logger
 import java.io.IOException

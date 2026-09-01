@@ -1,6 +1,7 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import kotlinx.serialization.json.Json
+import java.lang.reflect.Modifier
 import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -105,5 +106,15 @@ class UsagePayloadTest {
         assertEquals(29.0, usage.utilizationForTier(QuotaTiers.FIVE_HOUR))
         assertEquals(16.0, usage.utilizationForTier(QuotaTiers.SEVEN_DAY))
         assertEquals("2026-08-05T00:49:59.690395+00:00", usage.resetsAtForTier(QuotaTiers.FIVE_HOUR))
+    }
+
+    @Test
+    fun `the production decoder can access the generated UsageResponse serializer companion`() {
+        val companionField = UsageResponse::class.java.getDeclaredField("Companion")
+
+        assertTrue(
+            Modifier.isPublic(companionField.modifiers),
+            "UsageResponse.Companion must be public because the production decoder reads it directly"
+        )
     }
 }

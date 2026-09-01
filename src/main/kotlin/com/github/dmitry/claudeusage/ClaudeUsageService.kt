@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -45,6 +45,7 @@ class ClaudeUsageService : Disposable {
     private val errorState = AtomicReference(UsageErrorState.NONE)
     private val lastFetchTime = AtomicReference<Instant?>(null)
     private val previousUtilization = AtomicReference<Double?>(null)
+    private val previousOverflow = AtomicReference<Boolean?>(null)
     private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
     private val listeners = mutableListOf<() -> Unit>()
     @Volatile
@@ -215,6 +216,7 @@ class ClaudeUsageService : Disposable {
             currentBackoffSeconds = getRefreshIntervalSeconds()
             LOG.info("Successfully fetched Claude usage data")
             maybeNotifyThresholdCrossing(parsed)
+            maybeChimeOnCreditsSwitch(parsed)
         } catch (e: Exception) {
             LOG.warn("Failed to parse Claude usage response: ${e.message}")
             setError(UsageErrorState.PARSE_ERROR)
@@ -238,6 +240,27 @@ class ClaudeUsageService : Disposable {
             crossedUp(previous, current, settings.yellowThreshold) ->
                 showThresholdNotification("Claude Code usage warning", "$tier usage at $percent%$resetHint", NotificationType.INFORMATION)
         }
+    }
+
+    /**
+     * Chimes on both credit-spend transitions, with a distinct sound each way: usage starting to bill
+     * to credits, and the window resetting so included usage is available again. Both land while you
+     * are looking at your editor rather than the status bar, which is the whole point of a sound.
+     *
+     * The previous state is recorded whether or not the sound is enabled, so switching the setting on
+     * mid-session cannot fire on a transition that happened before it was armed. A first reading has
+     * no previous state and so stays silent, and a failed fetch leaves the state untouched rather than
+     * reading as a switch.
+     */
+    private fun maybeChimeOnCreditsSwitch(usage: UsageResponse) {
+        val settings = ClaudeUsageSettings.getInstance().state
+        val overflowing = usage.creditsOverflowFor(settings.statusBarQuotaTier)
+        val previous = previousOverflow.getAndSet(overflowing)
+
+        if (!settings.soundOnCreditsSwitch || previous == null || previous == overflowing) return
+
+        LOG.info("Credit spend ${if (overflowing) "started" else "ended"} - chiming")
+        if (overflowing) UsageSound.creditsStarted() else UsageSound.creditsEnded()
     }
 
     private fun crossedUp(previous: Double, current: Double, threshold: Int): Boolean =

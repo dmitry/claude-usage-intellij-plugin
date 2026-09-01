@@ -1,4 +1,4 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
 /**
  * Keeps secrets out of the IDE log and the settings UI.

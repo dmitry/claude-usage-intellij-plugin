@@ -1,9 +1,29 @@
 # Changelog
 
+## [0.3.2-local.6] - 2026-08-31
+
+### Fixed
+- Codex now launches from Finder/Dock-started JetBrains IDEs whose GUI `PATH` omits Homebrew, npm, nvm, or other CLI runtime directories
+- Settings shows the auto-detected Codex executable, while the existing path field remains available as an override
+- Missing Node.js, an unlaunchable or outdated Codex CLI, authentication failures, and timeouts now have distinct actionable states instead of a generic error
+- Codex stderr is drained into a bounded buffer and mapped to fixed diagnostics without exposing raw command output in the UI
+
+## [0.3.2-local.5] - 2026-08-31
+
+### Added
+- Separate Codex status-bar progress widget and Codex-only detail popup
+- Codex quota retrieval through the installed CLI's documented local app-server protocol
+- Independent Claude and Codex widget toggles plus an optional Codex executable path
+- Bundled Claude and Codex favicons in the compact status indicators
+
+### Changed
+- Settings page renamed to **Claude & Codex Usage**
+- Claude and Codex refresh, errors, popups, and cached state are independent
+
 ## [0.3.2] - 2026-07-23
 
 ### Added
-- Proxy support for the usage API request — auto-detects `HTTPS_PROXY`/`HTTP_PROXY` from `~/.claude/settings.json` (the `env` block Claude Code CLI reads), falling back to the `HTTPS_PROXY`/`HTTP_PROXY` environment variables (thanks [@zeroday98](https://github.com/zeroday98), [#4](https://github.com/dmitry/claude-usage-intellij-plugin/pull/4))
+- Proxy support for the usage API request — auto-detects `HTTPS_PROXY`/`HTTP_PROXY` from `~/.claude/settings.json` (the `env` block Claude Code CLI reads), falling back to the `HTTPS_PROXY`/`HTTP_PROXY` environment variables (thanks [@zeroday98](https://github.com/zeroday98), [#4](https://github.com/h2a/claude-usage-intellij-plugin/pull/4))
 - New "Proxy URL" setting to override the auto-detected proxy (supports `http://user:pass@host:port` for authenticated proxies); leave empty to keep auto-detecting, and the settings panel shows which proxy was detected
 - `socks://`, `socks4://` and `socks5://` proxy URLs are recognised as SOCKS proxies (default port 1080) instead of being treated as HTTP proxies
 - Dedicated "proxy error" state — HTTP 407, a failed CONNECT tunnel or an unreachable proxy host is now reported as a proxy problem with a hint in the popup

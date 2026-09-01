@@ -1,14 +1,16 @@
-package com.github.dmitry.claudeusage
+package com.github.h2a.claudeusage
 
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.ConfigurationException
+import com.intellij.openapi.project.ProjectManager
 import javax.swing.JComponent
 
 class ClaudeUsageSettingsConfigurable : Configurable {
 
     private var settingsComponent: ClaudeUsageSettingsComponent? = null
 
-    override fun getDisplayName(): String = "Claude Code Usage"
+    override fun getDisplayName(): String = "Claude & Codex Usage"
 
     override fun getPreferredFocusedComponent(): JComponent? =
         settingsComponent?.getPreferredFocusedComponent()
@@ -21,19 +23,25 @@ class ClaudeUsageSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val state = ClaudeUsageSettings.getInstance().state
         val component = settingsComponent ?: return false
-        return component.getQuotaTier() != state.statusBarQuotaTier ||
+        return component.getShowClaudeWidget() != state.showClaudeWidget ||
+            component.getShowCodexWidget() != state.showCodexWidget ||
+            component.getCodexExecutablePath() != state.codexExecutablePath ||
+            component.getQuotaTier() != state.statusBarQuotaTier ||
             component.getYellowThreshold() != state.yellowThreshold ||
             component.getRedThreshold() != state.redThreshold ||
             component.getCredentialsPath() != state.credentialsFilePath ||
             component.getRefreshIntervalMinutes() != state.refreshIntervalMinutes ||
             component.getUseMacKeychain() != state.useMacKeychain ||
             component.getNotifyOnThreshold() != state.notifyOnThreshold ||
+            component.getSoundOnCreditsSwitch() != state.soundOnCreditsSwitch ||
             component.getProxyUrl() != state.proxyUrl
     }
 
     override fun apply() {
         val state = ClaudeUsageSettings.getInstance().state
         val component = settingsComponent ?: return
+        val widgetVisibilityChanged = component.getShowClaudeWidget() != state.showClaudeWidget ||
+            component.getShowCodexWidget() != state.showCodexWidget
 
         val proxyUrl = component.getProxyUrl().trim()
         if (!ClaudeProxyResolver.isValidProxyUrl(proxyUrl)) {
@@ -62,6 +70,9 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         // Mirror the sanitized value back into the field so isModified() settles.
         component.setProxyUrl(sanitizedProxyUrl)
 
+        state.showClaudeWidget = component.getShowClaudeWidget()
+        state.showCodexWidget = component.getShowCodexWidget()
+        state.codexExecutablePath = component.getCodexExecutablePath().trim()
         state.statusBarQuotaTier = component.getQuotaTier()
         state.yellowThreshold = component.getYellowThreshold()
         state.redThreshold = component.getRedThreshold()
@@ -69,13 +80,30 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         state.refreshIntervalMinutes = component.getRefreshIntervalMinutes()
         state.useMacKeychain = component.getUseMacKeychain()
         state.notifyOnThreshold = component.getNotifyOnThreshold()
+        state.soundOnCreditsSwitch = component.getSoundOnCreditsSwitch()
         state.proxyUrl = sanitizedProxyUrl
         component.refreshProxyDetectedLabel()
+
+        if (widgetVisibilityChanged) {
+            ApplicationManager.getApplication().invokeLater {
+                ProjectManager.getInstance().openProjects.forEach { project ->
+                    UsageWidgetVisibilityUpdater.update(project)
+                }
+            }
+        }
+        if (state.showCodexWidget) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                CodexUsageService.getInstance().refreshUsage()
+            }
+        }
     }
 
     override fun reset() {
         val state = ClaudeUsageSettings.getInstance().state
         val component = settingsComponent ?: return
+        component.setShowClaudeWidget(state.showClaudeWidget)
+        component.setShowCodexWidget(state.showCodexWidget)
+        component.setCodexExecutablePath(state.codexExecutablePath)
         component.setQuotaTier(state.statusBarQuotaTier)
         component.setYellowThreshold(state.yellowThreshold)
         component.setRedThreshold(state.redThreshold)
@@ -83,6 +111,7 @@ class ClaudeUsageSettingsConfigurable : Configurable {
         component.setRefreshIntervalMinutes(state.refreshIntervalMinutes)
         component.setUseMacKeychain(state.useMacKeychain)
         component.setNotifyOnThreshold(state.notifyOnThreshold)
+        component.setSoundOnCreditsSwitch(state.soundOnCreditsSwitch)
         component.setProxyUrl(state.proxyUrl)
         component.refreshProxyDetectedLabel()
     }
