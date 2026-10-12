@@ -14,13 +14,13 @@ A simple IntelliJ plugin that displays your Claude subscription usage in the IDE
 - Manual refresh button in the popup for instant updates
 - Color-coded progress indicator (green → yellow → red)
 - Time until quota reset
-- Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, extra usage)
+- Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, 7-day Fable, extra usage)
 - Dark and light theme support
 - Error state display with actionable hints (missing credentials, auth expired, network/proxy issues)
 - Last fetch timestamp in the popup
 - Works behind a corporate proxy (auto-detected, see [Proxy support](#proxy-support))
 - Configurable settings (Settings → Tools → Claude Code Usage):
-  - Status bar quota display (5-hour, 7-day, or 7-day Sonnet)
+  - Status bar quota display (5-hour, 7-day, 7-day Sonnet, or 7-day Fable)
   - Auto-refresh interval (1–60 minutes, default 1)
   - Warning color thresholds (yellow/red)
   - Custom credentials file path

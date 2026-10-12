@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.3.3] - 2026-10-12
+
+### Added
+- 7-day Fable quota — shown as a row in the usage popup and selectable as the status bar quota ("7-day Fable"). The usage API has no dedicated `seven_day_fable` field; the value is read from the `weekly_scoped` entry for the Fable model in the response's `limits[]` array, the same source the Claude Code CLI uses
+
 ## [0.3.2] - 2026-07-23
 
 ### Added

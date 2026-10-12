@@ -16,7 +16,7 @@
         <li>Manual refresh button for instant updates</li>
         <li>Color-coded progress indicator (green → yellow → red)</li>
         <li>Time until quota reset</li>
-        <li>Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, extra usage)</li>
+        <li>Detailed popup with all usage tiers (5-hour, 7-day, 7-day Sonnet, 7-day Fable, extra usage)</li>
         <li>Configurable settings (Settings → Tools → Claude Code Usage)</li>
         <li>Works behind corporate proxies: auto-detects HTTPS_PROXY/HTTP_PROXY from ~/.claude/settings.json or the environment, with an option to override</li>
         <li>Dark and light theme support</li>
@@ -28,6 +28,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+    <b>0.3.3</b>
+    <ul>
+        <li>7-day Fable quota: shown in the usage popup and selectable as the status bar quota ("7-day Fable")</li>
+    </ul>
     <b>0.3.2</b>
     <ul>
         <li>Proxy support for the usage API request: auto-detects HTTPS_PROXY/HTTP_PROXY from ~/.claude/settings.json (falling back to the environment variables), with a new "Proxy URL" setting to override it manually (supports http://user:pass@host:port)</li>

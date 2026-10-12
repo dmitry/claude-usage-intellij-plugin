@@ -61,7 +61,8 @@ class ClaudeUsageStatusBarWidget(private val project: Project) : CustomStatusBar
         private val QUOTA_TIERS = listOf(
             "5-hour" to { usage: UsageResponse -> usage.fiveHour },
             "7-day" to { usage: UsageResponse -> usage.sevenDay },
-            "7-day Sonnet" to { usage: UsageResponse -> usage.sevenDaySonnet }
+            "7-day Sonnet" to { usage: UsageResponse -> usage.sevenDaySonnet },
+            "7-day Fable" to { usage: UsageResponse -> usage.sevenDayFable }
         )
     }
 

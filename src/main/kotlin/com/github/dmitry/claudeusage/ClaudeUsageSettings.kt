@@ -42,7 +42,7 @@ class ClaudeUsageSettings : PersistentStateComponent<ClaudeUsageSettings.State> 
         const val DEFAULT_NOTIFY_ON_THRESHOLD = true
         const val DEFAULT_PROXY_URL = ""
 
-        val QUOTA_TIER_OPTIONS = arrayOf("5-hour", "7-day", "7-day Sonnet")
+        val QUOTA_TIER_OPTIONS = arrayOf("5-hour", "7-day", "7-day Sonnet", "7-day Fable")
 
         fun getInstance(): ClaudeUsageSettings =
             ApplicationManager.getApplication().getService(ClaudeUsageSettings::class.java)
